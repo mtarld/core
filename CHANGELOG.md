@@ -2,6 +2,7 @@
 
 ## 2.7.0
 
+* Validator: Add custom constraint set
 * **BC**: Change `api_platform.listener.request.add_format` priority from 7 to 28 to execute it before firewall (priority 8) (#3599)
 * Doctrine: Better exception to find which resource is linked to an exception (#3965)
 * Doctrine: Allow mixed type value for date filter (notice if invalid) (#3870)
