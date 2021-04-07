@@ -76,10 +76,6 @@ final class PublishMercureUpdatesListener
             throw new InvalidArgumentException('A message bus or a HubRegistry instance must be provided.');
         }
 
-        if ($registry && !$registry instanceof HubRegistry) {
-            @trigger_error(sprintf('Passing a callable as the seventh argument to "%s::__construct()" is deprecated, pass a "%s" instance instead.', __CLASS__, HubRegistry::class), \E_USER_DEPRECATED);
-        }
-
         $this->resourceClassResolver = $resourceClassResolver;
         $this->iriConverter = $iriConverter;
         $this->resourceMetadataFactory = $resourceMetadataFactory;
@@ -127,6 +123,10 @@ final class PublishMercureUpdatesListener
      */
     public function postFlush(): void
     {
+        if (!$this->registry instanceof HubRegistry) {
+            @trigger_error(sprintf('Passing a callable as the seventh argument to "%s::__construct()" is deprecated, pass a "%s" instance instead.', __CLASS__, HubRegistry::class), \E_USER_DEPRECATED);
+        }
+
         try {
             foreach ($this->createdObjects as $object) {
                 $this->publishUpdate($object, $this->createdObjects[$object], 'create');

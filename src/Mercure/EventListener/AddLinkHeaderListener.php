@@ -37,10 +37,6 @@ final class AddLinkHeaderListener
      */
     public function __construct(ResourceMetadataFactoryInterface $resourceMetadataFactory, $discovery)
     {
-        if (!$discovery instanceof Discovery) {
-            @trigger_error(sprintf('Passing a string as the second argument to "%s::__construct()" is deprecated, pass a "%s" instance instead.', __CLASS__, Discovery::class), \E_USER_DEPRECATED);
-        }
-
         $this->resourceMetadataFactory = $resourceMetadataFactory;
         $this->discovery = $discovery;
     }
@@ -63,6 +59,8 @@ final class AddLinkHeaderListener
         }
 
         if (!$this->discovery instanceof Discovery) {
+            @trigger_error(sprintf('Passing a string as the second argument to "%s::__construct()" is deprecated, pass a "%s" instance instead.', __CLASS__, Discovery::class), \E_USER_DEPRECATED);
+
             $link = new Link('mercure', $this->discovery);
             if (null === $linkProvider = $request->attributes->get('_links')) {
                 $request->attributes->set('_links', new GenericLinkProvider([$link]));

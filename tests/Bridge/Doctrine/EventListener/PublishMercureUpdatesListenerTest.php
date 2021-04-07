@@ -522,6 +522,6 @@ class PublishMercureUpdatesListenerTest extends TestCase
 
     private function createMockHub(callable $callable): HubInterface
     {
-        return new MockHub('default', 'https://mercure.demo/.well-known/mercure', new StaticTokenProvider('x'), $callable);
+        return new MockHub('https://mercure.demo/.well-known/mercure', new StaticTokenProvider('x'), $callable);
     }
 }
