@@ -128,7 +128,7 @@ class AddLinkHeaderListenerTest extends TestCase
 
     /**
      * @dataProvider doNotAddProvider
-     * 
+     *
      * @group legacy
      */
     public function testDoNotAddHeaderLegacy(Request $request)

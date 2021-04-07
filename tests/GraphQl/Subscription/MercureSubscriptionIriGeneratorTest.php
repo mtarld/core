@@ -37,9 +37,9 @@ class MercureSubscriptionIriGeneratorTest extends TestCase
     protected function setUp(): void
     {
         if (!class_exists(Hub::class)) {
-            return;
-            $this->markTestSkipped('');
+            $this->markTestSkipped();
         }
+
         $this->defaultHub = new Hub('https://demo.mercure.rocks/hub', new StaticTokenProvider('xx'));
         $this->managedHub = new Hub('https://demo.mercure.rocks/managed', new StaticTokenProvider('xx'));
 
@@ -76,7 +76,7 @@ class MercureSubscriptionIriGeneratorTest extends TestCase
     {
         $mercureSubscriptionIriGenerator = new MercureSubscriptionIriGenerator(new RequestContext('', 'GET', 'example.com'), 'https://example.com/.well-known/mercure');
 
-        $this->assertSame("https://example.com/.well-known/mercure?topic=http://example.com/subscriptions/subscription-id", $mercureSubscriptionIriGenerator->generateMercureUrl('subscription-id'));
+        $this->assertSame('https://example.com/.well-known/mercure?topic=http://example.com/subscriptions/subscription-id', $mercureSubscriptionIriGenerator->generateMercureUrl('subscription-id'));
     }
 
 

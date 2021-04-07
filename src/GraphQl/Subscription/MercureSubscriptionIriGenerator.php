@@ -29,7 +29,7 @@ final class MercureSubscriptionIriGenerator implements MercureSubscriptionIriGen
     private $registry;
 
     /**
-     * @param HubRegistry $registry
+     * @param HubRegistry|string $registry
      */
     public function __construct(RequestContext $requestContext, $registry)
     {
@@ -54,9 +54,9 @@ final class MercureSubscriptionIriGenerator implements MercureSubscriptionIriGen
         if (!$this->registry instanceof HubRegistry) {
             @trigger_error(sprintf('Passing a string as the second argument to "%s::__construct()" is deprecated, pass a "%s" instance instead.', __CLASS__, HubRegistry::class), \E_USER_DEPRECATED);
 
-            return $this->registry . '?topic=' . $this->generateTopicIri($subscriptionId);
+            return $this->registry.'?topic='.$this->generateTopicIri($subscriptionId);
         }
 
-        return $this->registry->getHub($hub)->getUrl() . '?topic=' . $this->generateTopicIri($subscriptionId);
+        return $this->registry->getHub($hub)->getUrl().'?topic='.$this->generateTopicIri($subscriptionId);
     }
 }
