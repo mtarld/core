@@ -227,68 +227,6 @@ abstract class AbstractItemNormalizer extends AbstractObjectNormalizer
         return $object;
     }
 
-    /**
-     * Method copy-pasted from symfony/serializer.
-     * Remove it after symfony/serializer version update @see https://github.com/symfony/symfony/pull/28263.
-     *
-     * {@inheritdoc}
-     *
-     * @internal
-     */
-    protected function instantiateObject(array &$data, string $class, array &$context, \ReflectionClass $reflectionClass, array|bool $allowedAttributes, string $format = null): object
-    {
-        if (null !== $object = $this->extractObjectToPopulate($class, $context, static::OBJECT_TO_POPULATE)) {
-            unset($context[static::OBJECT_TO_POPULATE]);
-
-            return $object;
-        }
-
-        $class = $this->getClassDiscriminatorResolvedClass($data, $class);
-        $reflectionClass = new \ReflectionClass($class);
-
-        $constructor = $this->getConstructor($data, $class, $context, $reflectionClass, $allowedAttributes);
-        if ($constructor) {
-            $constructorParameters = $constructor->getParameters();
-
-            $params = [];
-            foreach ($constructorParameters as $constructorParameter) {
-                $paramName = $constructorParameter->name;
-                $key = $this->nameConverter ? $this->nameConverter->normalize($paramName, $class, $format, $context) : $paramName;
-
-                $allowed = false === $allowedAttributes || (\is_array($allowedAttributes) && \in_array($paramName, $allowedAttributes, true));
-                $ignored = !$this->isAllowedAttribute($class, $paramName, $format, $context);
-                if ($constructorParameter->isVariadic()) {
-                    if ($allowed && !$ignored && (isset($data[$key]) || \array_key_exists($key, $data))) {
-                        if (!\is_array($data[$paramName])) {
-                            throw new RuntimeException(sprintf('Cannot create an instance of %s from serialized data because the variadic parameter %s can only accept an array.', $class, $constructorParameter->name));
-                        }
-
-                        $params[] = $data[$paramName];
-                    }
-                } elseif ($allowed && !$ignored && (isset($data[$key]) || \array_key_exists($key, $data))) {
-                    $params[] = $this->createConstructorArgument($data[$key], $key, $constructorParameter, $context, $format);
-
-                    // Don't run set for a parameter passed to the constructor
-                    unset($data[$key]);
-                } elseif (isset($context[static::DEFAULT_CONSTRUCTOR_ARGUMENTS][$class][$key])) {
-                    $params[] = $context[static::DEFAULT_CONSTRUCTOR_ARGUMENTS][$class][$key];
-                } elseif ($constructorParameter->isDefaultValueAvailable()) {
-                    $params[] = $constructorParameter->getDefaultValue();
-                } else {
-                    throw new MissingConstructorArgumentsException(sprintf('Cannot create an instance of %s from serialized data because its constructor requires parameter "%s" to be present.', $class, $constructorParameter->name));
-                }
-            }
-
-            if ($constructor->isConstructor()) {
-                return $reflectionClass->newInstanceArgs($params);
-            }
-
-            return $constructor->invokeArgs(null, $params);
-        }
-
-        return new $class();
-    }
-
     protected function getClassDiscriminatorResolvedClass(array $data, string $class): string
     {
         if (null === $this->classDiscriminatorResolver || (null === $mapping = $this->classDiscriminatorResolver->getMappingForClass($class))) {
@@ -305,11 +243,6 @@ abstract class AbstractItemNormalizer extends AbstractObjectNormalizer
         }
 
         return $mappedClass;
-    }
-
-    protected function createConstructorArgument($parameterData, string $key, \ReflectionParameter $constructorParameter, array &$context, string $format = null): mixed
-    {
-        return $this->createAttributeValue($constructorParameter->name, $parameterData, $format, $context);
     }
 
     /**
