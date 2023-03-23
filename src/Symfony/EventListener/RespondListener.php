@@ -21,7 +21,10 @@ use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInter
 use ApiPlatform\Util\OperationRequestInitiatorTrait;
 use ApiPlatform\Util\RequestAttributesExtractor;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\HttpKernel\Event\ViewEvent;
+use Symfony\Component\SerDes\SerializerInterface;
+use Symfony\Component\SerDes\Stream\OutputStream;
 
 /**
  * Builds the response object.
@@ -40,6 +43,7 @@ final class RespondListener
     public function __construct(
         ResourceMetadataCollectionFactoryInterface $resourceMetadataFactory = null,
         private readonly ?IriConverterInterface $iriConverter = null,
+        private readonly ?SerializerInterface $serDesSerializer = null,
     ) {
         $this->resourceMetadataCollectionFactory = $resourceMetadataFactory;
     }
@@ -105,10 +109,12 @@ final class RespondListener
             }
         }
 
-        $event->setResponse(new Response(
-            $controllerResult,
-            $status,
-            $headers
-        ));
+        if (\is_string($controllerResult) || !$this->serDesSerializer) {
+            $event->setResponse(new Response($controllerResult, $status, $headers));
+
+            return;
+        }
+
+        $response = new StreamedResponse(fn () => $this->serDesSerializer->serialize($controllerResult, 'json', new OutputStream()));
     }
 }

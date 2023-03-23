@@ -131,6 +131,14 @@ class AppKernel extends Kernel
             'messenger' => $messengerConfig,
             'router' => ['utf8' => true],
             'http_method_override' => false,
+            'ser_des' => [
+                'serializable_paths' => [
+                    dirname(__DIR__, 2).'/src/Hydra',
+                ],
+                'template_warm_up' => [
+                    'formats' => ['json'],
+                ],
+            ],
         ]);
 
         $alg = class_exists(NativePasswordHasher::class, false) || class_exists('Symfony\Component\Security\Core\Encoder\NativePasswordEncoder') ? 'auto' : 'bcrypt';

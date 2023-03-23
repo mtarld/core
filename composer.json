@@ -12,6 +12,12 @@
             "homepage": "https://dunglas.fr"
         }
     ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../marshaller/symfony/src/Symfony/Component/SerDes"
+        }
+    ],
     "require": {
         "php": ">=8.1",
         "doctrine/inflector": "^1.0 || ^2.0",
@@ -23,6 +29,7 @@
         "symfony/property-access": "^6.1",
         "symfony/property-info": "^6.1",
         "symfony/serializer": "^6.1",
+        "symfony/ser-des": "*",
         "symfony/web-link": "^6.1",
         "willdurand/negotiation": "^3.0"
     },
@@ -146,5 +153,6 @@
         "symfony": {
             "require": "^6.1"
         }
-    }
+    },
+    "minimum-stability": "dev"
 }
