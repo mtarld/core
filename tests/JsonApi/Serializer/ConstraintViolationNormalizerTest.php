@@ -20,12 +20,13 @@ use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Dummy;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\RelatedDummy;
 use PHPUnit\Framework\TestCase;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\ConstraintViolation;
 use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
+use Symfony\Component\TypeInfo\Type;
 
 /**
  * @author Baptiste Meyer <baptiste.meyer@gmail.com>
@@ -58,8 +59,8 @@ class ConstraintViolationNormalizerTest extends TestCase
     public function testNormalize(): void
     {
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)]))->shouldBeCalledTimes(1);
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]))->shouldBeCalledTimes(1);
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy')->willReturn((new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::object(RelatedDummy::class) : [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)]))->shouldBeCalledTimes(1);
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::string() : [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]))->shouldBeCalledTimes(1);
 
         $nameConverterProphecy = $this->prophesize(NameConverterInterface::class);
         $nameConverterProphecy->normalize('relatedDummy', Dummy::class, 'jsonapi')->willReturn('relatedDummy')->shouldBeCalledTimes(1);

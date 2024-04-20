@@ -31,7 +31,7 @@ use ApiPlatform\Tests\Fixtures\TestBundle\Entity\RelatedDummy;
 use PHPUnit\Framework\TestCase;
 use Prophecy\Argument;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\Exception\LogicException;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AnnotationLoader;
@@ -41,6 +41,7 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\TypeInfo\Type;
 
 /**
  * @author Kévin Dunglas <dunglas@gmail.com>
@@ -125,10 +126,10 @@ class ItemNormalizerTest extends TestCase
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $propertyMetadataFactoryProphecy->create(Dummy::class, 'name', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('')->withReadable(true)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::string() : [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('')->withReadable(true)
         );
         $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)])->withDescription('')->withReadable(true)->withWritable(false)->withWritableLink(false)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::object(RelatedDummy::class) : [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)])->withDescription('')->withReadable(true)->withWritable(false)->withWritableLink(false)
         );
 
         $iriConverterProphecy = $this->prophesize(IriConverterInterface::class);
@@ -189,16 +190,16 @@ class ItemNormalizerTest extends TestCase
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $propertyMetadataFactoryProphecy->create(Book::class, 'author', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, ActivableInterface::class),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, TimestampableInterface::class),
-            ])->withReadable(true)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class)
+                ? Type::intersection(Type::object(ActivableInterface::class), Type::object(TimestampableInterface::class))
+                : [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ActivableInterface::class), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, TimestampableInterface::class)]
+            )->withReadable(true)
         );
         $propertyMetadataFactoryProphecy->create(Book::class, 'library', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, ActivableInterface::class),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, TimestampableInterface::class),
-            ])->withReadable(true)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class)
+                ? Type::intersection(Type::object(ActivableInterface::class), Type::object(TimestampableInterface::class))
+                : [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ActivableInterface::class), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, TimestampableInterface::class)]
+            )->withReadable(true)
         );
 
         $iriConverterProphecy = $this->prophesize(IriConverterInterface::class);
@@ -253,10 +254,10 @@ class ItemNormalizerTest extends TestCase
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $propertyMetadataFactoryProphecy->create(Dummy::class, 'name', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('')->withReadable(true)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::string() : [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('')->withReadable(true)
         );
         $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)])->withDescription('')->withReadable(true)->withWritable(false)->withReadableLink(false)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::object(RelatedDummy::class) : [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)])->withDescription('')->withReadable(true)->withWritable(false)->withReadableLink(false)
         );
 
         $iriConverterProphecy = $this->prophesize(IriConverterInterface::class);
@@ -331,13 +332,13 @@ class ItemNormalizerTest extends TestCase
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $propertyMetadataFactoryProphecy->create(MaxDepthDummy::class, 'id', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)])->withDescription('')->withReadable(true)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::int() : [new LegacyType(LegacyType::BUILTIN_TYPE_INT)])->withDescription('')->withReadable(true)
         );
         $propertyMetadataFactoryProphecy->create(MaxDepthDummy::class, 'name', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('')->withReadable(true)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::string() : [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('')->withReadable(true)
         );
         $propertyMetadataFactoryProphecy->create(MaxDepthDummy::class, 'child', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, MaxDepthDummy::class)])->withDescription('')->withReadable(true)->withWritable(false)->withReadableLink(true)
+            (new ApiProperty())->withBuiltinTypes(class_exists(Type::class) ? Type::object(MaxDepthDummy::class) : [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, MaxDepthDummy::class)])->withDescription('')->withReadable(true)->withWritable(false)->withReadableLink(true)
         );
 
         $iriConverterProphecy = $this->prophesize(IriConverterInterface::class);

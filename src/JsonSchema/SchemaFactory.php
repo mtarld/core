@@ -25,8 +25,15 @@ use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInter
 use ApiPlatform\Metadata\Resource\ResourceMetadataCollection;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use ApiPlatform\Metadata\Util\ResourceClassInfoTrait;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
+use Symfony\Component\TypeInfo\Exception\LogicException;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\IntersectionType;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\UnionType;
 
 /**
  * {@inheritdoc}
@@ -170,6 +177,9 @@ final class SchemaFactory implements SchemaFactoryInterface
         }
 
         $types = $propertyMetadata->getBuiltinTypes() ?? [];
+        if ($types instanceof Type) {
+            $types = $types instanceof UnionType || $types instanceof IntersectionType ? $types->getTypes() : [$types];
+        }
 
         // never override the following keys if at least one is already set
         // or if property has no type(s) defined
@@ -200,42 +210,83 @@ final class SchemaFactory implements SchemaFactoryInterface
 
         foreach ($types as $type) {
             // TODO: in 3.3 add trigger_deprecation() as type factories are not used anymore, we moved this logic to SchemaPropertyMetadataFactory so that it gets cached
-            if ($typeFromFactory = $this->typeFactory?->getType($type, 'jsonschema', $propertyMetadata->isReadableLink(), $serializerContext)) {
-                $propertySchema = $typeFromFactory;
+
+            if ($type instanceof LegacyType) {
+                if ($typeFromFactory = $this->typeFactory?->getType($type, 'jsonschema', $propertyMetadata->isReadableLink(), $serializerContext)) {
+                    $propertySchema = $typeFromFactory;
+                    break;
+                }
+
+                $isCollection = $type->isCollection();
+                if ($isCollection) {
+                    $valueType = $type->getCollectionValueTypes()[0] ?? null;
+                } else {
+                    $valueType = $type;
+                }
+
+                $className = $valueType?->getClassName();
+                if (null === $className) {
+                    continue;
+                }
+
+                $subSchema = $this->buildSchema($className, $format, $parentType, null, $subSchema, $serializerContext + [self::FORCE_SUBSCHEMA => true], false);
+                if (!isset($subSchema['$ref'])) {
+                    continue;
+                }
+
+                if ($isCollection) {
+                    $propertySchema['items']['$ref'] = $subSchema['$ref'];
+                    unset($propertySchema['items']['type']);
+                    break;
+                }
+
+                if ($type->isNullable()) {
+                    $propertySchema['anyOf'] = [['$ref' => $subSchema['$ref']], ['type' => 'null']];
+                } else {
+                    $propertySchema['$ref'] = $subSchema['$ref'];
+                }
+
+                unset($propertySchema['type']);
+                break;
+            } else {
+                if ($typeFromFactory = $this->typeFactory?->getDataType($type, 'jsonschema', $propertyMetadata->isReadableLink(), $serializerContext)) {
+                    $propertySchema = $typeFromFactory;
+                    break;
+                }
+
+                $valueType = $type->asNonNullable() instanceof CollectionType ? $type->asNonNullable()->getCollectionValueType() : $type;
+
+                try {
+                    $baseType = $type->getBaseType();
+                } catch (LogicException) {
+                    continue;
+                }
+
+                if (!$baseType instanceof ObjectType) {
+                    continue;
+                }
+
+                $subSchema = $this->buildSchema($baseType->getClassName(), $format, $parentType, null, $subSchema, $serializerContext + [self::FORCE_SUBSCHEMA => true], false);
+                if (!isset($subSchema['$ref'])) {
+                    continue;
+                }
+
+                if ($type instanceof CollectionType) {
+                    $propertySchema['items']['$ref'] = $subSchema['$ref'];
+                    unset($propertySchema['items']['type']);
+                    break;
+                }
+
+                if ($type->isNullable()) {
+                    $propertySchema['anyOf'] = [['$ref' => $subSchema['$ref']], ['type' => 'null']];
+                } else {
+                    $propertySchema['$ref'] = $subSchema['$ref'];
+                }
+
+                unset($propertySchema['type']);
                 break;
             }
 
-            $isCollection = $type->isCollection();
-            if ($isCollection) {
-                $valueType = $type->getCollectionValueTypes()[0] ?? null;
-            } else {
-                $valueType = $type;
-            }
-
-            $className = $valueType?->getClassName();
-            if (null === $className) {
-                continue;
-            }
-
-            $subSchema = $this->buildSchema($className, $format, $parentType, null, $subSchema, $serializerContext + [self::FORCE_SUBSCHEMA => true], false);
-            if (!isset($subSchema['$ref'])) {
-                continue;
-            }
-
-            if ($isCollection) {
-                $propertySchema['items']['$ref'] = $subSchema['$ref'];
-                unset($propertySchema['items']['type']);
-                break;
-            }
-
-            if ($type->isNullable()) {
-                $propertySchema['anyOf'] = [['$ref' => $subSchema['$ref']], ['type' => 'null']];
-            } else {
-                $propertySchema['$ref'] = $subSchema['$ref'];
-            }
-
-            unset($propertySchema['type']);
-            break;
         }
 
         $schema->getDefinitions()[$definitionName]['properties'][$normalizedPropertyName] = new \ArrayObject($propertySchema);

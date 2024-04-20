@@ -29,11 +29,18 @@ use ApiPlatform\Metadata\Resource\ResourceMetadataCollection;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use ApiPlatform\Metadata\UrlGeneratorInterface;
 use ApiPlatform\Serializer\CacheableSupportsMethodInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\TypeInfo\Exception\LogicException;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\TypeIdentifier;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\IntersectionType;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\UnionType;
 
 /**
  * Creates a machine readable Hydra API documentation.
@@ -322,45 +329,120 @@ final class DocumentationNormalizer implements NormalizerInterface, CacheableSup
         }
 
         $builtInTypes = $propertyMetadata->getBuiltinTypes() ?? [];
+        if ($builtInTypes instanceof Type) {
+            $builtInTypes = $builtInTypes instanceof UnionType || $builtInTypes instanceof IntersectionType ? $builtInTypes->getTypes() : [$builtInTypes];
+        }
+
         $types = [];
 
         foreach ($builtInTypes as $type) {
-            if ($type->isCollection() && null !== $collectionType = $type->getCollectionValueTypes()[0] ?? null) {
-                $type = $collectionType;
-            }
+            // BC layer for symfony/property-info < 7.1
+            if ($type instanceof LegacyType) {
+                if ($type->isCollection() && null !== $collectionType = $type->getCollectionValueTypes()[0] ?? null) {
+                    $type = $collectionType;
+                }
 
-            switch ($type->getBuiltinType()) {
-                case Type::BUILTIN_TYPE_STRING:
+                switch ($type->getBuiltinType()) {
+                    case LegacyType::BUILTIN_TYPE_STRING:
+                        if (!\in_array('xmls:string', $types, true)) {
+                            $types[] = 'xmls:string';
+                        }
+                        break;
+                    case LegacyType::BUILTIN_TYPE_INT:
+                        if (!\in_array('xmls:integer', $types, true)) {
+                            $types[] = 'xmls:integer';
+                        }
+                        break;
+                    case LegacyType::BUILTIN_TYPE_FLOAT:
+                        if (!\in_array('xmls:decimal', $types, true)) {
+                            $types[] = 'xmls:decimal';
+                        }
+                        break;
+                    case LegacyType::BUILTIN_TYPE_BOOL:
+                        if (!\in_array('xmls:boolean', $types, true)) {
+                            $types[] = 'xmls:boolean';
+                        }
+                        break;
+                    case LegacyType::BUILTIN_TYPE_OBJECT:
+                        if (null === $className = $type->getClassName()) {
+                            continue 2;
+                        }
+
+                        if (is_a($className, \DateTimeInterface::class, true)) {
+                            if (!\in_array('xmls:dateTime', $types, true)) {
+                                $types[] = 'xmls:dateTime';
+                            }
+                            break;
+                        }
+
+                        if ($this->resourceClassResolver->isResourceClass($className)) {
+                            $resourceMetadata = $this->resourceMetadataFactory->create($className);
+                            $operation = $resourceMetadata->getOperation();
+
+                            if (!$operation instanceof HttpOperation || !$operation->getTypes()) {
+                                if (!\in_array("#{$operation->getShortName()}", $types, true)) {
+                                    $types[] = "#{$operation->getShortName()}";
+                                }
+                                break;
+                            }
+
+                            $types = array_unique(array_merge($types, $operation->getTypes()));
+                            break;
+                        }
+                }
+            } else {
+                if ($type->asNonNullable() instanceof CollectionType) {
+                    $type = $type->getCollectionValueType();
+                }
+
+                if ($type->isA(TypeIdentifier::STRING)) {
                     if (!\in_array('xmls:string', $types, true)) {
                         $types[] = 'xmls:string';
                     }
-                    break;
-                case Type::BUILTIN_TYPE_INT:
+
+                    continue;
+                }
+
+                if ($type->isA(TypeIdentifier::INT)) {
                     if (!\in_array('xmls:integer', $types, true)) {
                         $types[] = 'xmls:integer';
                     }
-                    break;
-                case Type::BUILTIN_TYPE_FLOAT:
+
+                    continue;
+                }
+
+                if ($type->isA(TypeIdentifier::FLOAT)) {
                     if (!\in_array('xmls:decimal', $types, true)) {
                         $types[] = 'xmls:decimal';
                     }
-                    break;
-                case Type::BUILTIN_TYPE_BOOL:
+
+                    continue;
+                }
+
+                if ($type->isA(TypeIdentifier::BOOL)) {
                     if (!\in_array('xmls:boolean', $types, true)) {
                         $types[] = 'xmls:boolean';
                     }
-                    break;
-                case Type::BUILTIN_TYPE_OBJECT:
-                    if (null === $className = $type->getClassName()) {
-                        continue 2;
+
+                    continue;
+                }
+
+                if ($type->isA(\DateTimeInterface::class)) {
+                    if (!\in_array('xmls:dateTime', $types, true)) {
+                        $types[] = 'xmls:dateTime';
                     }
 
-                    if (is_a($className, \DateTimeInterface::class, true)) {
-                        if (!\in_array('xmls:dateTime', $types, true)) {
-                            $types[] = 'xmls:dateTime';
-                        }
-                        break;
-                    }
+                    continue;
+                }
+
+                try {
+                    $baseType = $type->getBaseType();
+                } catch (LogicException) {
+                    continue;
+                }
+
+                if ($baseType instanceof ObjectType) {
+                    $className = $baseType->getClassName();
 
                     if ($this->resourceClassResolver->isResourceClass($className)) {
                         $resourceMetadata = $this->resourceMetadataFactory->create($className);
@@ -370,12 +452,15 @@ final class DocumentationNormalizer implements NormalizerInterface, CacheableSup
                             if (!\in_array("#{$operation->getShortName()}", $types, true)) {
                                 $types[] = "#{$operation->getShortName()}";
                             }
-                            break;
+
+                            continue;
                         }
 
                         $types = array_unique(array_merge($types, $operation->getTypes()));
-                        break;
+
+                        continue;
                     }
+                }
             }
         }
 

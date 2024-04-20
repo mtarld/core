@@ -141,12 +141,17 @@ class JsonSchemaGenerateCommandTest extends KernelTestCase
 
     /**
      * Test issue #5998.
+     *
+     * @group wip
      */
     public function testWritableNonResourceRef(): void
     {
         $this->tester->run(['command' => 'api:json-schema:generate', 'resource' => 'ApiPlatform\Tests\Fixtures\TestBundle\Entity\Issue5998\SaveProduct', '--type' => 'input']);
         $result = $this->tester->getDisplay();
         $json = json_decode($result, associative: true);
+
+        dd('end');
+        dd($json['definitions']['SaveProduct.jsonld']['properties']['codes']);
 
         $this->assertEquals($json['definitions']['SaveProduct.jsonld']['properties']['codes']['items']['$ref'], '#/definitions/ProductCode.jsonld');
     }

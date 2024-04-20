@@ -26,10 +26,15 @@ use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\InterfaceType;
 use GraphQL\Type\Definition\NonNull;
-use GraphQL\Type\Definition\ObjectType;
+use GraphQL\Type\Definition\ObjectType as GraphQLObjectType;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Psr\Container\ContainerInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Exception\LogicException;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\UnionType;
 
 /**
  * Builds the GraphQL types.
@@ -86,8 +91,8 @@ final class TypeBuilder implements TypeBuilderInterface, TypeBuilderEnumInterfac
 
         if ($this->typesContainer->has($shortName)) {
             $resourceObjectType = $this->typesContainer->get($shortName);
-            if (!($resourceObjectType instanceof ObjectType || $resourceObjectType instanceof NonNull)) {
-                throw new \LogicException(sprintf('Expected GraphQL type "%s" to be %s.', $shortName, implode('|', [ObjectType::class, NonNull::class])));
+            if (!($resourceObjectType instanceof GraphQLObjectType || $resourceObjectType instanceof NonNull)) {
+                throw new \LogicException(sprintf('Expected GraphQL type "%s" to be %s.', $shortName, implode('|', [GraphQLObjectType::class, NonNull::class])));
             }
 
             return $resourceObjectType;
@@ -156,7 +161,7 @@ final class TypeBuilder implements TypeBuilderInterface, TypeBuilderEnumInterfac
             'interfaces' => $wrapData ? [] : [$this->getNodeInterface()],
         ];
 
-        $resourceObjectType = $input ? GraphQLType::nonNull(new InputObjectType($configuration)) : new ObjectType($configuration);
+        $resourceObjectType = $input ? GraphQLType::nonNull(new InputObjectType($configuration)) : new GraphQLObjectType($configuration);
         $this->typesContainer->set($shortName, $resourceObjectType);
 
         return $resourceObjectType;
@@ -236,7 +241,7 @@ final class TypeBuilder implements TypeBuilderInterface, TypeBuilderEnumInterfac
             'fields' => $fields,
         ];
 
-        $resourcePaginatedCollectionType = new ObjectType($configuration);
+        $resourcePaginatedCollectionType = new GraphQLObjectType($configuration);
         $this->typesContainer->set($connectionTypeKey, $resourcePaginatedCollectionType);
 
         return $resourcePaginatedCollectionType;
@@ -275,11 +280,31 @@ final class TypeBuilder implements TypeBuilderInterface, TypeBuilderEnumInterfac
     }
 
     /**
+     * @deprecated since 3.3, use isObjectCollection instead
+     *
      * {@inheritdoc}
      */
-    public function isCollection(Type $type): bool
+    public function isCollection(LegacyType $type): bool
     {
+        trigger_deprecation('api-platform/graphql', '3.3', 'The "%s()" method is deprecated, use "isObjectCollection()" instead.', __METHOD__);
+
         return $type->isCollection() && ($collectionValueType = $type->getCollectionValueTypes()[0] ?? null) && null !== $collectionValueType->getClassName();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function isObjectCollection(Type $type): bool
+    {
+        if (!$type->asNonNullable() instanceof CollectionType) {
+            return false;
+        }
+
+        try {
+            return $type->asNonNullable()->getCollectionValueType()->getBaseType() instanceof ObjectType;
+        } catch (LogicException) {
+            return false;
+        }
     }
 
     private function getCursorBasedPaginationFields(GraphQLType $resourceType): array
@@ -296,7 +321,7 @@ final class TypeBuilder implements TypeBuilderInterface, TypeBuilderEnumInterfac
                 'cursor' => GraphQLType::nonNull(GraphQLType::string()),
             ],
         ];
-        $edgeObjectType = new ObjectType($edgeObjectTypeConfiguration);
+        $edgeObjectType = new GraphQLObjectType($edgeObjectTypeConfiguration);
         $this->typesContainer->set("{$shortName}Edge", $edgeObjectType);
 
         $pageInfoObjectTypeConfiguration = [
@@ -309,7 +334,7 @@ final class TypeBuilder implements TypeBuilderInterface, TypeBuilderEnumInterfac
                 'hasPreviousPage' => GraphQLType::nonNull(GraphQLType::boolean()),
             ],
         ];
-        $pageInfoObjectType = new ObjectType($pageInfoObjectTypeConfiguration);
+        $pageInfoObjectType = new GraphQLObjectType($pageInfoObjectTypeConfiguration);
         $this->typesContainer->set("{$shortName}PageInfo", $pageInfoObjectType);
 
         return [
@@ -334,7 +359,7 @@ final class TypeBuilder implements TypeBuilderInterface, TypeBuilderEnumInterfac
                 'totalCount' => GraphQLType::nonNull(GraphQLType::int()),
             ],
         ];
-        $paginationInfoObjectType = new ObjectType($paginationInfoObjectTypeConfiguration);
+        $paginationInfoObjectType = new GraphQLObjectType($paginationInfoObjectTypeConfiguration);
         $this->typesContainer->set("{$shortName}PaginationInfo", $paginationInfoObjectType);
 
         return [

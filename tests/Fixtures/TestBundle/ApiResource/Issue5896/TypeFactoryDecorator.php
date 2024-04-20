@@ -15,7 +15,10 @@ namespace ApiPlatform\Tests\Fixtures\TestBundle\ApiResource\Issue5896;
 
 use ApiPlatform\JsonSchema\Schema;
 use ApiPlatform\JsonSchema\TypeFactoryInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Exception\LogicException;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\ObjectType;
 
 class TypeFactoryDecorator implements TypeFactoryInterface
 {
@@ -24,7 +27,20 @@ class TypeFactoryDecorator implements TypeFactoryInterface
     ) {
     }
 
-    public function getType(Type $type, string $format = 'json', bool $readableLink = null, array $serializerContext = null, Schema $schema = null): array
+    public function getDataType(Type $type, string $format = 'json', bool $readableLink = null, array $serializerContext = null, Schema $schema = null): array
+    {
+        try {
+            $baseType = $type->asNonNullable()->getBaseType();
+            if ($baseType instanceof ObjectType && is_a($type->getClassName(), LocalDate::class, true)) {
+                return ['type' => 'string', 'format' => 'date'];
+            }
+        } catch (LogicException) {
+        }
+
+        return $this->decorated->getDataType($type, $format, $readableLink, $serializerContext, $schema);
+    }
+
+    public function getType(LegacyType $type, string $format = 'json', bool $readableLink = null, array $serializerContext = null, Schema $schema = null): array
     {
         if (is_a($type->getClassName(), LocalDate::class, true)) {
             return [

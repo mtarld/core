@@ -21,6 +21,11 @@ use ApiPlatform\Serializer\ContextTrait;
 use Symfony\Component\Serializer\Exception\LogicException;
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
 use Symfony\Component\Serializer\Mapping\AttributeMetadataInterface;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\IntersectionType;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\UnionType;
 
 /**
  * Converts between objects and array including HAL metadata.
@@ -146,6 +151,9 @@ final class ItemNormalizer extends AbstractItemNormalizer
             $propertyMetadata = $this->propertyMetadataFactory->create($context['resource_class'], $attribute, $options);
 
             $types = $propertyMetadata->getBuiltinTypes() ?? [];
+            if ($types instanceof Type) {
+                $types = $types instanceof UnionType || $types instanceof IntersectionType ? $types->getTypes() : [$types];
+            }
 
             // prevent declaring $attribute as attribute if it's already declared as relationship
             $isRelationship = false;
@@ -153,13 +161,34 @@ final class ItemNormalizer extends AbstractItemNormalizer
             foreach ($types as $type) {
                 $isOne = $isMany = false;
 
-                if (null !== $type) {
+                // BC layer for symfony/property-info < 7.1
+                if ($type instanceof LegacyType) {
                     if ($type->isCollection()) {
                         $valueType = $type->getCollectionValueTypes()[0] ?? null;
                         $isMany = null !== $valueType && ($className = $valueType->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
                     } else {
                         $className = $type->getClassName();
                         $isOne = $className && $this->resourceClassResolver->isResourceClass($className);
+                    }
+                } elseif ($type instanceof Type) {
+                    try {
+                        $baseType = $type->getBaseType();
+                    } catch (LogicException) {
+                        continue;
+                    }
+
+                    if ($type instanceof CollectionType) {
+                        try {
+                            $collectionValueBaseType = $type->getCollectionValueType()->getBaseType();
+
+                            if ($collectionValueBaseType instanceof ObjectType) {
+                                $isMany = $this->resourceClassResolver->isResourceClass($baseType->getClassName());
+                            }
+                        } catch (LogicException) {
+                            continue;
+                        }
+                    } elseif ($baseType instanceof ObjectType) {
+                        $isOne = $this->resourceClassResolver->isResourceClass($baseType->getClassName());
                     }
                 }
 

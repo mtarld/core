@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace ApiPlatform\Api\UriVariableTransformer;
 
 use ApiPlatform\Api\UriVariableTransformerInterface;
-use Symfony\Component\PropertyInfo\Type;
 
 final class IntegerUriVariableTransformer implements UriVariableTransformerInterface
 {
@@ -25,6 +24,6 @@ final class IntegerUriVariableTransformer implements UriVariableTransformerInter
 
     public function supportsTransformation(mixed $value, array $types, array $context = []): bool
     {
-        return Type::BUILTIN_TYPE_INT === $types[0] && \is_string($value);
+        return 'int' === $types[0] && \is_string($value);
     }
 }

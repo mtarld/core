@@ -16,9 +16,15 @@ namespace ApiPlatform\JsonSchema;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use ApiPlatform\Metadata\Util\ResourceClassInfoTrait;
 use Ramsey\Uuid\UuidInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Uid\Ulid;
 use Symfony\Component\Uid\Uuid;
+use Symfony\Component\TypeInfo\Exception\LogicException;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\TypeIdentifier;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\UnionType;
 
 /**
  * {@inheritdoc}
@@ -46,8 +52,10 @@ final class TypeFactory implements TypeFactoryInterface
     /**
      * {@inheritdoc}
      */
-    public function getType(Type $type, string $format = 'json', bool $readableLink = null, array $serializerContext = null, Schema $schema = null): array
+    public function getType(LegacyType $type, string $format = 'json', bool $readableLink = null, array $serializerContext = null, Schema $schema = null): array
     {
+        trigger_deprecation('api-platform/json-schema', '3.3', 'The "%s()" method is deprecated, use "getDataType()" instead.', __METHOD__);
+
         if ('jsonschema' === $format) {
             return [];
         }
@@ -55,9 +63,9 @@ final class TypeFactory implements TypeFactoryInterface
         // TODO: OpenApiFactory uses this to compute filter types
         if ($type->isCollection()) {
             $keyType = $type->getCollectionKeyTypes()[0] ?? null;
-            $subType = ($type->getCollectionValueTypes()[0] ?? null) ?? new Type($type->getBuiltinType(), false, $type->getClassName(), false);
+            $subType = ($type->getCollectionValueTypes()[0] ?? null) ?? new LegacyType($type->getBuiltinType(), false, $type->getClassName(), false);
 
-            if (null !== $keyType && Type::BUILTIN_TYPE_STRING === $keyType->getBuiltinType()) {
+            if (null !== $keyType && LegacyType::BUILTIN_TYPE_STRING === $keyType->getBuiltinType()) {
                 return $this->addNullabilityToTypeDefinition([
                     'type' => 'object',
                     'additionalProperties' => $this->getType($subType, $format, $readableLink, $serializerContext, $schema),
@@ -73,13 +81,54 @@ final class TypeFactory implements TypeFactoryInterface
         return $this->addNullabilityToTypeDefinition($this->makeBasicType($type, $format, $readableLink, $serializerContext, $schema), $type, $schema);
     }
 
-    private function makeBasicType(Type $type, string $format = 'json', bool $readableLink = null, array $serializerContext = null, Schema $schema = null): array
+    /**
+     * {@inheritdoc}
+     */
+    public function getDataType(Type $type, string $format = 'json', bool $readableLink = null, array $serializerContext = null, Schema $schema = null): array
+    {
+        if ('jsonschema' === $format) {
+            return [];
+        }
+
+        $nullable = $type->isNullable();
+
+        try {
+            $baseType = $type->getBaseType();
+        } catch (LogicException) {
+            return [];
+        }
+
+        if ($type->asNonNullable() instanceof CollectionType) {
+            if ($type->asNonNullable()->isList()) {
+                return $this->addNullabilityToTypeDefinition([
+                    'type' => 'array',
+                    'items' => $this->getDataType($type->asNonNullable()->getCollectionValueType(), $format, $readableLink, $serializerContext, $schema),
+                ], $type, $schema);
+            }
+
+            return $this->addNullabilityToTypeDefinition([
+                'type' => 'object',
+                'additionalProperties' => $this->getDataType($type->asNonNullable()->getCollectionValueType(), $format, $readableLink, $serializerContext, $schema),
+            ], $type, $schema);
+        }
+
+        // TODO: OpenApiFactory uses this to compute filter types
+        return $this->addNullabilityToTypeDefinition(match (true) {
+            $type->isA(TypeIdentifier::INT) => ['type' => 'integer'],
+            $type->isA(TypeIdentifier::FLOAT) => ['type' => 'number'],
+            $type->isA(TypeIdentifier::BOOL) => ['type' => 'boolean'],
+            $baseType instanceof ObjectType => $this->getClassType($baseType->getClassName(), $nullable, $format, $readableLink, $serializerContext, $schema),
+            default => ['type' => 'string'],
+        }, $type, $schema);
+    }
+
+    private function makeBasicType(LegacyType $type, string $format = 'json', bool $readableLink = null, array $serializerContext = null, Schema $schema = null): array
     {
         return match ($type->getBuiltinType()) {
-            Type::BUILTIN_TYPE_INT => ['type' => 'integer'],
-            Type::BUILTIN_TYPE_FLOAT => ['type' => 'number'],
-            Type::BUILTIN_TYPE_BOOL => ['type' => 'boolean'],
-            Type::BUILTIN_TYPE_OBJECT => $this->getClassType($type->getClassName(), $type->isNullable(), $format, $readableLink, $serializerContext, $schema),
+            LegacyType::BUILTIN_TYPE_INT => ['type' => 'integer'],
+            LegacyType::BUILTIN_TYPE_FLOAT => ['type' => 'number'],
+            LegacyType::BUILTIN_TYPE_BOOL => ['type' => 'boolean'],
+            LegacyType::BUILTIN_TYPE_OBJECT => $this->getClassType($type->getClassName(), $type->isNullable(), $format, $readableLink, $serializerContext, $schema),
             default => ['type' => 'string'],
         };
     }
@@ -170,7 +219,7 @@ final class TypeFactory implements TypeFactoryInterface
      *
      * @return array<string, mixed>
      */
-    private function addNullabilityToTypeDefinition(array $jsonSchema, Type $type, ?Schema $schema): array
+    private function addNullabilityToTypeDefinition(array $jsonSchema, Type|LegacyType $type, ?Schema $schema): array
     {
         if ($schema && Schema::VERSION_SWAGGER === $schema->getVersion()) {
             return $jsonSchema;

@@ -18,7 +18,10 @@ use ApiPlatform\Metadata\GraphQl\Operation;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\Dummy as DummyDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Dummy;
 use GraphQL\Type\Definition\Type as GraphQLType;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Exception\LogicException;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\ObjectType;
 
 /**
  * Converts a built-in type to its GraphQL equivalent.
@@ -31,10 +34,25 @@ final class TypeConverter implements TypeConverterInterface
     {
     }
 
+    public function convertPhpType(Type $type, bool $input, Operation $rootOperation, string $resourceClass, string $rootResource, ?string $property, int $depth): GraphQLType|string|null
+    {
+        if ('dummyDate' === $property && \in_array($rootResource, [Dummy::class, DummyDocument::class], true)) {
+            try {
+                $baseType = $type->asNonNullable()->getBaseType();
+                if ($baseType instanceof ObjectType && is_a($type->getClassName(), \DateTimeInterface::class, true)) {
+                    return \DateTime::class;
+                }
+            } catch (LogicException) {
+            }
+        }
+
+        return $this->defaultTypeConverter->convertPhpType($type, $input, $rootOperation, $resourceClass, $rootResource, $property, $depth);
+    }
+
     /**
      * {@inheritdoc}
      */
-    public function convertType(Type $type, bool $input, Operation $rootOperation, string $resourceClass, string $rootResource, ?string $property, int $depth): GraphQLType|string|null
+    public function convertType(LegacyType $type, bool $input, Operation $rootOperation, string $resourceClass, string $rootResource, ?string $property, int $depth): GraphQLType|string|null
     {
         if ('dummyDate' === $property
             && \in_array($rootResource, [Dummy::class, DummyDocument::class], true)
