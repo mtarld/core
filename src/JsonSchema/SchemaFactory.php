@@ -24,6 +24,12 @@ use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInter
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
+use Symfony\Component\TypeInfo\TypeIdentifier;
+use Symfony\Component\TypeInfo\Type\BuiltinType;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 
 /**
  * {@inheritdoc}
@@ -170,7 +176,14 @@ final class SchemaFactory implements SchemaFactoryInterface, SchemaFactoryAwareI
             return;
         }
 
-        $types = $propertyMetadata->getBuiltinTypes() ?? [];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $types = $propertyMetadata->getBuiltinTypes() ?? [];
+            $hasType = [] !== $types;
+        } else {
+            $type = $propertyMetadata->getPhpType();
+            $hasType = null !== $type;
+        }
 
         // never override the following keys if at least one is already set
         // or if property has no type(s) defined
@@ -183,7 +196,7 @@ final class SchemaFactory implements SchemaFactoryInterface, SchemaFactoryAwareI
 
         if (
             !$isUnknown && (
-                [] === $types
+                !$hasType
                 || ($propertySchema['$ref'] ?? $propertySchema['anyOf'] ?? $propertySchema['allOf'] ?? $propertySchema['oneOf'] ?? false)
                 || (\is_array($propertySchemaType) ? \array_key_exists('string', $propertySchemaType) : 'string' !== $propertySchemaType)
                 || ($propertySchema['format'] ?? $propertySchema['enum'] ?? false)
@@ -200,45 +213,95 @@ final class SchemaFactory implements SchemaFactoryInterface, SchemaFactoryAwareI
         $refs = [];
         $isNullable = null;
 
-        foreach ($types as $type) {
-            $subSchema = new Schema($version);
-            $subSchema->setDefinitions($schema->getDefinitions()); // Populate definitions of the main schema
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            foreach ($types as $type) {
+                $subSchema = new Schema($version);
+                $subSchema->setDefinitions($schema->getDefinitions()); // Populate definitions of the main schema
 
-            $isCollection = $type->isCollection();
-            if ($isCollection) {
-                $valueType = $type->getCollectionValueTypes()[0] ?? null;
-            } else {
-                $valueType = $type;
-            }
-
-            $className = $valueType?->getClassName();
-            if (null === $className) {
-                continue;
-            }
-
-            $subSchemaFactory = $this->schemaFactory ?: $this;
-            $subSchema = $subSchemaFactory->buildSchema($className, $format, $parentType, null, $subSchema, $serializerContext + [self::FORCE_SUBSCHEMA => true], false);
-            if (!isset($subSchema['$ref'])) {
-                continue;
-            }
-
-            if (false === $propertyMetadata->getGenId()) {
-                $subDefinitionName = $this->definitionNameFactory->create($className, $format, $className, null, $serializerContext);
-
-                if (isset($subSchema->getDefinitions()[$subDefinitionName])) {
-                    unset($subSchema->getDefinitions()[$subDefinitionName]['properties']['@id']);
+                $isCollection = $type->isCollection();
+                if ($isCollection) {
+                    $valueType = $type->getCollectionValueTypes()[0] ?? null;
+                } else {
+                    $valueType = $type;
                 }
-            }
 
-            if ($isCollection) {
-                $key = ($propertySchema['type'] ?? null) === 'object' ? 'additionalProperties' : 'items';
-                $propertySchema[$key]['$ref'] = $subSchema['$ref'];
-                unset($propertySchema[$key]['type']);
-                break;
-            }
+                $className = $valueType?->getClassName();
+                if (null === $className) {
+                    continue;
+                }
 
-            $refs[] = ['$ref' => $subSchema['$ref']];
-            $isNullable = $isNullable ?? $type->isNullable();
+                $subSchemaFactory = $this->schemaFactory ?: $this;
+                $subSchema = $subSchemaFactory->buildSchema($className, $format, $parentType, null, $subSchema, $serializerContext + [self::FORCE_SUBSCHEMA => true], false);
+                if (!isset($subSchema['$ref'])) {
+                    continue;
+                }
+
+                if (false === $propertyMetadata->getGenId()) {
+                    $subDefinitionName = $this->definitionNameFactory->create($className, $format, $className, null, $serializerContext);
+
+                    if (isset($subSchema->getDefinitions()[$subDefinitionName])) {
+                        unset($subSchema->getDefinitions()[$subDefinitionName]['properties']['@id']);
+                    }
+                }
+
+                if ($isCollection) {
+                    $key = ($propertySchema['type'] ?? null) === 'object' ? 'additionalProperties' : 'items';
+                    $propertySchema[$key]['$ref'] = $subSchema['$ref'];
+                    unset($propertySchema[$key]['type']);
+                    break;
+                }
+
+                $refs[] = ['$ref' => $subSchema['$ref']];
+                $isNullable = $isNullable ?? $type->isNullable();
+            }
+        } elseif ($type) {
+            foreach ($type instanceof CompositeTypeInterface ? $type->getTypes() : [$type] as $t) {
+                if ($t instanceof BuiltinType && TypeIdentifier::NULL === $t->getTypeIdentifier()) {
+                    continue;
+                }
+
+                $subSchema = new Schema($version);
+                $subSchema->setDefinitions($schema->getDefinitions()); // Populate definitions of the main schema
+
+                $valueType = $t;
+
+                if ($t instanceof CollectionType) {
+                    $valueType = $t->getCollectionValueType();
+                }
+
+                while ($valueType instanceof WrappingTypeInterface) {
+                    $valueType = $valueType->getWrappedType();
+                }
+
+                if (!$valueType instanceof ObjectType) {
+                    continue;
+                }
+
+                $subSchemaFactory = $this->schemaFactory ?: $this;
+                $subSchema = $subSchemaFactory->buildSchema($valueType->getClassName(), $format, $parentType, null, $subSchema, $serializerContext + [self::FORCE_SUBSCHEMA => true], false);
+                if (!isset($subSchema['$ref'])) {
+                    continue;
+                }
+
+                if (false === $propertyMetadata->getGenId()) {
+                    $subDefinitionName = $this->definitionNameFactory->create($valueType->getClassName(), $format, $valueType->getClassName(), null, $serializerContext);
+
+                    if (isset($subSchema->getDefinitions()[$subDefinitionName])) {
+                        unset($subSchema->getDefinitions()[$subDefinitionName]['properties']['@id']);
+                    }
+                }
+
+                if ($t instanceof CollectionType) {
+                    $key = ($propertySchema['type'] ?? null) === 'object' ? 'additionalProperties' : 'items';
+                    $propertySchema[$key]['$ref'] = $subSchema['$ref'];
+                    unset($propertySchema[$key]['type']);
+                    break;
+                }
+
+                $refs[] = ['$ref' => $subSchema['$ref']];
+                $isNullable = $type->isNullable();
+            }
         }
 
         if ($isNullable) {

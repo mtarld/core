@@ -20,11 +20,12 @@ use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use PHPUnit\Framework\TestCase;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Validator\ConstraintViolation;
 use Symfony\Component\Validator\ConstraintViolationList;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
+use Symfony\Component\TypeInfo\Type;
 
 /**
  * @author Baptiste Meyer <baptiste.meyer@gmail.com>
@@ -50,8 +51,15 @@ class ConstraintViolationNormalizerTest extends TestCase
     public function testNormalize(): void
     {
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)]))->shouldBeCalledTimes(1);
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]))->shouldBeCalledTimes(1);
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy')->willReturn((new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)]))->shouldBeCalledTimes(1);
+            $propertyMetadataFactoryProphecy->create(Dummy::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]))->shouldBeCalledTimes(1);
+        } else {
+            $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy')->willReturn((new ApiProperty())->withPhpType(Type::object(RelatedDummy::class)))->shouldBeCalledTimes(1);
+            $propertyMetadataFactoryProphecy->create(Dummy::class, 'name')->willReturn((new ApiProperty())->withPhpType(Type::string()))->shouldBeCalledTimes(1);
+        }
 
         $nameConverterProphecy = $this->prophesize(NameConverterInterface::class);
         $nameConverterProphecy->normalize('relatedDummy', Dummy::class, 'jsonapi')->willReturn('relatedDummy')->shouldBeCalledTimes(1);

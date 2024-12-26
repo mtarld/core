@@ -23,6 +23,10 @@ use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use ApiPlatform\State\ApiResource\Error;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
 
 /**
  * Decorator factory which adds JSON:API properties to the JSON Schema document.
@@ -286,27 +290,58 @@ final class SchemaFactory implements SchemaFactoryInterface, SchemaFactoryAwareI
     private function getRelationship(string $resourceClass, string $property, ?array $serializerContext): ?array
     {
         $propertyMetadata = $this->propertyMetadataFactory->create($resourceClass, $property, $serializerContext ?? []);
-        $types = $propertyMetadata->getBuiltinTypes() ?? [];
+
         $isRelationship = false;
         $isOne = $isMany = false;
         $relatedClasses = [];
 
-        foreach ($types as $type) {
-            if ($type->isCollection()) {
-                $collectionValueType = $type->getCollectionValueTypes()[0] ?? null;
-                $isMany = $collectionValueType && ($className = $collectionValueType->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
-            } else {
-                $isOne = ($className = $type->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists($propertyMetadata, 'getPhpType')) {
+            $types = $propertyMetadata->getBuiltinTypes() ?? [];
+
+            foreach ($types as $type) {
+                if ($type->isCollection()) {
+                    $collectionValueType = $type->getCollectionValueTypes()[0] ?? null;
+                    $isMany = $collectionValueType && ($className = $collectionValueType->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
+                } else {
+                    $isOne = ($className = $type->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
+                }
+                if (!isset($className) || (!$isOne && !$isMany)) {
+                    continue;
+                }
+                $isRelationship = true;
+                $resourceMetadata = $this->resourceMetadataFactory->create($className);
+                $operation = $resourceMetadata->getOperation();
+                // @see https://github.com/api-platform/core/issues/5501
+                // @see https://github.com/api-platform/core/pull/5722
+                $relatedClasses[$className] = $operation->canRead();
             }
-            if (!isset($className) || (!$isOne && !$isMany)) {
-                continue;
+        } elseif ($type = $propertyMetadata->getPhpType()) {
+            /** @var class-string|null $className */
+            $className = null;
+
+            $typeIsResourceClass = function (Type $type) use (&$className): bool {
+                return $type instanceof ObjectType && $this->resourceClassResolver->isResourceClass($className = $type->getClassName());
+            };
+
+            foreach ($type instanceof CompositeTypeInterface ? $type->getTypes() : [$type] as $t) {
+                if ($t instanceof CollectionType) {
+                    $isMany = $t->getCollectionValueType()->isSatisfiedBy($typeIsResourceClass);
+                } else {
+                    $isOne = $t->isSatisfiedBy($typeIsResourceClass);
+                }
+
+                if (!$className || (!$isOne && !$isMany)) {
+                    continue;
+                }
+
+                $isRelationship = true;
+                $resourceMetadata = $this->resourceMetadataFactory->create($className);
+                $operation = $resourceMetadata->getOperation();
+                // @see https://github.com/api-platform/core/issues/5501
+                // @see https://github.com/api-platform/core/pull/5722
+                $relatedClasses[$className] = $operation->canRead();
             }
-            $isRelationship = true;
-            $resourceMetadata = $this->resourceMetadataFactory->create($className);
-            $operation = $resourceMetadata->getOperation();
-            // @see https://github.com/api-platform/core/issues/5501
-            // @see https://github.com/api-platform/core/pull/5722
-            $relatedClasses[$className] = $operation->canRead();
         }
 
         return $isRelationship ? [$isOne, $relatedClasses] : null;

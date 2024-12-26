@@ -21,9 +21,16 @@ use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use ApiPlatform\Metadata\Util\ResourceClassInfoTrait;
 use Doctrine\Common\Collections\ArrayCollection;
 use Ramsey\Uuid\UuidInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Uid\Ulid;
 use Symfony\Component\Uid\Uuid;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\TypeIdentifier;
+use Symfony\Component\TypeInfo\Type\BuiltinType;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 
 /**
  * Build ApiProperty::schema.
@@ -86,14 +93,29 @@ final class SchemaPropertyMetadataFactory implements PropertyMetadataFactoryInte
             $propertySchema['externalDocs'] = ['url' => $iri];
         }
 
-        $types = $propertyMetadata->getBuiltinTypes() ?? [];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $types = $propertyMetadata->getBuiltinTypes() ?? [];
+            $hasType = [] !== $types;
 
-        if (!\array_key_exists('default', $propertySchema) && !empty($default = $propertyMetadata->getDefault()) && (!\count($types) || null === ($className = $types[0]->getClassName()) || !$this->isResourceClass($className))) {
-            if ($default instanceof \BackedEnum) {
-                $default = $default->value;
+            if (!\array_key_exists('default', $propertySchema) && !empty($default = $propertyMetadata->getDefault()) && (!\count($types) || null === ($className = $types[0]->getClassName()) || !$this->isResourceClass($className))) {
+                if ($default instanceof \BackedEnum) {
+                    $default = $default->value;
+                }
+                $propertySchema['default'] = $default;
             }
-            $propertySchema['default'] = $default;
+        } else {
+            $type = $propertyMetadata->getPhpType();
+            $hasType = null !== $type;
+
+            if (!\array_key_exists('default', $propertySchema) && !empty($default = $propertyMetadata->getDefault()) && !$type?->isSatisfiedBy(fn (Type $t): bool => $t instanceof ObjectType && $this->isResourceClass($t->getClassName()))) {
+                if ($default instanceof \BackedEnum) {
+                    $default = $default->value;
+                }
+                $propertySchema['default'] = $default;
+            }
         }
+
 
         if (!\array_key_exists('example', $propertySchema) && !empty($example = $propertyMetadata->getExample())) {
             $propertySchema['example'] = $example;
@@ -104,7 +126,7 @@ final class SchemaPropertyMetadataFactory implements PropertyMetadataFactoryInte
         }
 
         // never override the following keys if at least one is already set or if there's a custom openapi context
-        if ([] === $types
+        if (!$hasType
             || ($propertySchema['type'] ?? $propertySchema['$ref'] ?? $propertySchema['anyOf'] ?? $propertySchema['allOf'] ?? $propertySchema['oneOf'] ?? false)
             || \array_key_exists('type', $propertyMetadata->getOpenapiContext() ?? [])
         ) {
@@ -112,36 +134,58 @@ final class SchemaPropertyMetadataFactory implements PropertyMetadataFactoryInte
         }
 
         $valueSchema = [];
-        foreach ($types as $type) {
-            // Temp fix for https://github.com/symfony/symfony/pull/52699
-            if (ArrayCollection::class === $type->getClassName()) {
-                $type = new Type($type->getBuiltinType(), $type->isNullable(), $type->getClassName(), true, $type->getCollectionKeyTypes(), $type->getCollectionValueTypes());
-            }
 
-            if ($isCollection = $type->isCollection()) {
-                $keyType = $type->getCollectionKeyTypes()[0] ?? null;
-                $valueType = $type->getCollectionValueTypes()[0] ?? null;
-            } else {
-                $keyType = null;
-                $valueType = $type;
-            }
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            foreach ($types as $type) {
+                // Temp fix for https://github.com/symfony/symfony/pull/52699
+                if (ArrayCollection::class === $type->getClassName()) {
+                    $type = new LegacyType($type->getBuiltinType(), $type->isNullable(), $type->getClassName(), true, $type->getCollectionKeyTypes(), $type->getCollectionValueTypes());
+                }
 
-            if (null === $valueType) {
-                $builtinType = 'string';
-                $className = null;
-            } else {
-                $builtinType = $valueType->getBuiltinType();
-                $className = $valueType->getClassName();
-            }
+                if ($isCollection = $type->isCollection()) {
+                    $keyType = $type->getCollectionKeyTypes()[0] ?? null;
+                    $valueType = $type->getCollectionValueTypes()[0] ?? null;
+                } else {
+                    $keyType = null;
+                    $valueType = $type;
+                }
 
-            if ($isCollection && null !== $propertyMetadata->getUriTemplate()) {
-                $keyType = null;
-                $isCollection = false;
-            }
+                if (null === $valueType) {
+                    $builtinType = 'string';
+                    $className = null;
+                } else {
+                    $builtinType = $valueType->getBuiltinType();
+                    $className = $valueType->getClassName();
+                }
 
-            $propertyType = $this->getType(new Type($builtinType, $type->isNullable(), $className, $isCollection, $keyType, $valueType), $link);
-            if (!\in_array($propertyType, $valueSchema, true)) {
-                $valueSchema[] = $propertyType;
+                if ($isCollection && null !== $propertyMetadata->getUriTemplate()) {
+                    $keyType = null;
+                    $isCollection = false;
+                }
+
+                $propertyType = $this->getType(new LegacyType($builtinType, $type->isNullable(), $className, $isCollection, $keyType, $valueType), $type->isNullable(), $link);
+                if (!\in_array($propertyType, $valueSchema, true)) {
+                    $valueSchema[] = $propertyType;
+                }
+            }
+        } elseif ($type) {
+            foreach ($type instanceof CompositeTypeInterface ? $type->getTypes() : [$type] as $t) {
+                // nullability is handled in each part of the composite type
+                if ($t instanceof BuiltinType && TypeIdentifier::NULL === $t->getTypeIdentifier()) {
+                    continue;
+                }
+
+                $propertyType = $t;
+
+                if ($t instanceof CollectionType && null !== $propertyMetadata->getUriTemplate()) {
+                    $propertyType = $t->getCollectionValueType();
+                }
+
+                $propertySchemaType = $this->getType($propertyType, $type->isNullable(), $link);
+                if (!\in_array($propertySchemaType, $valueSchema, true)) {
+                    $valueSchema[] = $propertySchemaType;
+                }
             }
         }
 
@@ -163,37 +207,79 @@ final class SchemaPropertyMetadataFactory implements PropertyMetadataFactoryInte
         return $propertyMetadata->withSchema($propertySchema + [$composition => $valueSchema]);
     }
 
-    private function getType(Type $type, ?bool $readableLink = null): array
+    private function getType(Type|LegacyType $type, bool $isNullable, ?bool $readableLink = null): array
     {
-        if (!$type->isCollection()) {
-            return $this->addNullabilityToTypeDefinition($this->typeToArray($type, $readableLink), $type);
+        if (!$type instanceof Type) {
+            if (!$type->isCollection()) {
+                return $this->addNullabilityToTypeDefinition($this->typeToArray($type, $isNullable, $readableLink), $isNullable);
+            }
+
+            $keyType = $type->getCollectionKeyTypes()[0] ?? null;
+            $subType = ($type->getCollectionValueTypes()[0] ?? null) ?? new Type($type->getBuiltinType(), false, $type->getClassName(), false);
+
+            if (null !== $keyType && LegacyType::BUILTIN_TYPE_STRING === $keyType->getBuiltinType()) {
+                return $this->addNullabilityToTypeDefinition([
+                    'type' => 'object',
+                    'additionalProperties' => $this->getType($subType, $isNullable, $readableLink),
+                ], $isNullable);
+            }
+
+            return $this->addNullabilityToTypeDefinition([
+                'type' => 'array',
+                'items' => $this->getType($subType, $isNullable, $readableLink),
+            ], $isNullable);
         }
 
-        $keyType = $type->getCollectionKeyTypes()[0] ?? null;
-        $subType = ($type->getCollectionValueTypes()[0] ?? null) ?? new Type($type->getBuiltinType(), false, $type->getClassName(), false);
+        if (!$type instanceof CollectionType) {
+            return $this->addNullabilityToTypeDefinition($this->typeToArray($type, $isNullable, $readableLink), $isNullable);
+        }
 
-        if (null !== $keyType && Type::BUILTIN_TYPE_STRING === $keyType->getBuiltinType()) {
+        if (!$type->getCollectionKeyType()->isIdentifiedBy(TypeIdentifier::INT)) {
             return $this->addNullabilityToTypeDefinition([
                 'type' => 'object',
-                'additionalProperties' => $this->getType($subType, $readableLink),
-            ], $type);
+                'additionalProperties' => $this->getType($type->getCollectionValueType(), $isNullable, $readableLink),
+            ], $isNullable);
         }
 
         return $this->addNullabilityToTypeDefinition([
             'type' => 'array',
-            'items' => $this->getType($subType, $readableLink),
-        ], $type);
+            'items' => $this->getType($type->getCollectionValueType(), $isNullable, $readableLink),
+        ], $isNullable);
     }
 
-    private function typeToArray(Type $type, ?bool $readableLink = null): array
+    private function typeToArray(Type|LegacyType $type, bool $isNullable, ?bool $readableLink = null): array
     {
-        return match ($type->getBuiltinType()) {
-            Type::BUILTIN_TYPE_INT => ['type' => 'integer'],
-            Type::BUILTIN_TYPE_FLOAT => ['type' => 'number'],
-            Type::BUILTIN_TYPE_BOOL => ['type' => 'boolean'],
-            Type::BUILTIN_TYPE_OBJECT => $this->getClassType($type->getClassName(), $type->isNullable(), $readableLink),
-            default => ['type' => 'string'],
-        };
+        if (!$type instanceof Type) {
+            return match ($type->getBuiltinType()) {
+                LegacyType::BUILTIN_TYPE_INT => ['type' => 'integer'],
+                LegacyType::BUILTIN_TYPE_FLOAT => ['type' => 'number'],
+                LegacyType::BUILTIN_TYPE_BOOL => ['type' => 'boolean'],
+                LegacyType::BUILTIN_TYPE_OBJECT => $this->getClassType($type->getClassName(), $isNullable, $readableLink),
+                default => ['type' => 'string'],
+            };
+        }
+
+        if ($type->isIdentifiedBy(TypeIdentifier::INT)) {
+            return ['type' => 'integer'];
+        }
+
+        if ($type->isIdentifiedBy(TypeIdentifier::FLOAT)) {
+            return ['type' => 'number'];
+        }
+
+        if ($type->isIdentifiedBy(TypeIdentifier::BOOL)) {
+            return ['type' => 'boolean'];
+        }
+
+        while ($type instanceof WrappingTypeInterface) {
+            $type = $type->getWrappedType();
+        }
+
+        if ($type instanceof ObjectType) {
+            return $this->getClassType($type->getClassName(), $isNullable, $readableLink);
+        }
+
+        return ['type' => 'string'];
     }
 
     /**
@@ -276,9 +362,9 @@ final class SchemaPropertyMetadataFactory implements PropertyMetadataFactoryInte
      *
      * @return array<string, mixed>
      */
-    private function addNullabilityToTypeDefinition(array $jsonSchema, Type $type): array
+    private function addNullabilityToTypeDefinition(array $jsonSchema, bool $isNullable): array
     {
-        if (!$type->isNullable()) {
+        if (!$isNullable) {
             return $jsonSchema;
         }
 

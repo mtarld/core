@@ -14,7 +14,8 @@ declare(strict_types=1);
 namespace ApiPlatform\Symfony\Validator\Metadata\Property\Restriction;
 
 use ApiPlatform\Metadata\ApiProperty;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\TypeIdentifier;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\Length;
 
@@ -50,11 +51,28 @@ class PropertySchemaLengthRestriction implements PropertySchemaRestrictionMetada
      */
     public function supports(Constraint $constraint, ApiProperty $propertyMetadata): bool
     {
-        $types = array_map(fn (Type $type) => $type->getBuiltinType(), $propertyMetadata->getBuiltinTypes() ?? []);
-        if ($propertyMetadata->getExtraProperties()['nested_schema'] ?? false) {
-            $types = [Type::BUILTIN_TYPE_STRING];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists($propertyMetadata, 'getPhpType')) {
+            $types = array_map(fn (LegacyType $type) => $type->getBuiltinType(), $propertyMetadata->getBuiltinTypes() ?? []);
+            if ($propertyMetadata->getExtraProperties()['nested_schema'] ?? false) {
+                $types = [LegacyType::BUILTIN_TYPE_STRING];
+            }
+
+            return $constraint instanceof Length && \count($types) && \in_array(LegacyType::BUILTIN_TYPE_STRING, $types, true);
         }
 
-        return $constraint instanceof Length && \count($types) && \in_array(Type::BUILTIN_TYPE_STRING, $types, true);
+        if (!$constraint instanceof Length) {
+            return false;
+        }
+
+        if ($propertyMetadata->getExtraProperties()['nested_schema'] ?? false) {
+            return true;
+        }
+
+        if (null === $type = $propertyMetadata->getPhpType()) {
+            return false;
+        }
+
+        return $type->isIdentifiedBy(TypeIdentifier::STRING);
     }
 }

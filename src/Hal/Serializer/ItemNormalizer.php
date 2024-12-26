@@ -33,6 +33,10 @@ use Symfony\Component\Serializer\Mapping\AttributeMetadataInterface;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactoryInterface;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
 
 /**
  * Converts between objects and array including HAL metadata.
@@ -175,7 +179,20 @@ final class ItemNormalizer extends AbstractItemNormalizer
         foreach ($attributes as $attribute) {
             $propertyMetadata = $this->propertyMetadataFactory->create($context['resource_class'], $attribute, $options);
 
-            $types = $propertyMetadata->getBuiltinTypes() ?? [];
+            // BC layer for api-platform/metadata < 4.1
+            if (!method_exists($propertyMetadata, 'getPhpType')) {
+                $types = $propertyMetadata->getBuiltinTypes() ?? [];
+            } else {
+                $type = $propertyMetadata->getPhpType();
+                $types = $type instanceof CompositeTypeInterface ? $type->getTypes() : (null === $type ? [] : [$type]);
+
+                /** @var class-string|null $className */
+                $className = null;
+
+                $typeIsResourceClass = function (Type $type) use (&$className): bool {
+                    return $type instanceof ObjectType && $this->resourceClassResolver->isResourceClass($className = $type->getClassName());
+                };
+            }
 
             // prevent declaring $attribute as attribute if it's already declared as relationship
             $isRelationship = false;
@@ -184,12 +201,21 @@ final class ItemNormalizer extends AbstractItemNormalizer
                 $isOne = $isMany = false;
 
                 if (null !== $type) {
-                    if ($type->isCollection()) {
-                        $valueType = $type->getCollectionValueTypes()[0] ?? null;
-                        $isMany = null !== $valueType && ($className = $valueType->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
+                    if (!$type instanceof Type) {
+                        if ($type->isCollection()) {
+                            $valueType = $type->getCollectionValueTypes()[0] ?? null;
+                            $isMany = null !== $valueType && ($className = $valueType->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
+                        } else {
+                            $className = $type->getClassName();
+                            $isOne = $className && $this->resourceClassResolver->isResourceClass($className);
+                        }
                     } else {
-                        $className = $type->getClassName();
-                        $isOne = $className && $this->resourceClassResolver->isResourceClass($className);
+                        if ($type instanceof CollectionType) {
+                            $valueType = $type->getCollectionKeyType();
+                            $isMany = $valueType->isSatisfiedBy($typeIsResourceClass);
+                        } else {
+                            $isOne = $type->isSatisfiedBy($typeIsResourceClass);
+                        }
                     }
                 }
 

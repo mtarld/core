@@ -16,7 +16,8 @@ namespace ApiPlatform\Metadata;
 use ApiPlatform\Metadata\Exception\InvalidUriVariableException;
 use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 
 /**
  * UriVariables converter that chains uri variables transformers.
@@ -78,10 +79,21 @@ final class UriVariablesConverter implements UriVariablesConverterInterface
     private function getIdentifierTypes(string $resourceClass, array $properties): array
     {
         $types = [];
+
         foreach ($properties as $property) {
             $propertyMetadata = $this->propertyMetadataFactory->create($resourceClass, $property);
-            foreach ($propertyMetadata->getBuiltinTypes() as $type) {
-                $types[] = Type::BUILTIN_TYPE_OBJECT === ($builtinType = $type->getBuiltinType()) ? $type->getClassName() : $builtinType;
+            $type = $propertyMetadata->getPhpType();
+
+            if (!$type) {
+                continue;
+            }
+
+            foreach ($type instanceof CompositeTypeInterface ? $type->getTypes() : [$type] as $t) {
+                while ($t instanceof WrappingTypeInterface) {
+                    $t = $t->getWrappedType();
+                }
+
+                $types[] = (string) $t;
             }
         }
 

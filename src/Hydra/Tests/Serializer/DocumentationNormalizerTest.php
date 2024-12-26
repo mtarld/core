@@ -35,7 +35,8 @@ use ApiPlatform\Metadata\UrlGeneratorInterface;
 use PHPUnit\Framework\TestCase;
 use Prophecy\Argument;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
 
 use const ApiPlatform\JsonLd\HYDRA_CONTEXT;
 
@@ -76,16 +77,32 @@ class DocumentationNormalizerTest extends TestCase
         $propertyNameCollectionFactoryProphecy->create('dummy', [])->shouldBeCalled()->willReturn(new PropertyNameCollection(['name', 'description', 'nameConverted', 'relatedDummy', 'iri']));
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('name')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
-        );
-        $propertyMetadataFactoryProphecy->create('dummy', 'description', Argument::type('array'))->shouldBeCalled()->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('description')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)->withJsonldContext(['@type' => '@id'])
-        );
-        $propertyMetadataFactoryProphecy->create('dummy', 'nameConverted', Argument::type('array'))->shouldBeCalled()->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('name converted')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
-        );
-        $propertyMetadataFactoryProphecy->create('dummy', 'relatedDummy', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, 'dummy', true, null, new Type(Type::BUILTIN_TYPE_OBJECT, false, 'relatedDummy'))])->withDescription('This is a name.')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('name')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'description', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('description')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)->withJsonldContext(['@type' => '@id'])
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'nameConverted', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('name converted')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'relatedDummy', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'dummy', true, null, new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'relatedDummy'))])->withDescription('This is a name.')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+        } else {
+            $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())->withDescription('name')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'description', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())->withDescription('description')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)->withJsonldContext(['@type' => '@id'])
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'nameConverted', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())->withDescription('name converted')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'relatedDummy', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withPhpType(Type::collection(Type::object('dummy'), Type::object('relatedDummy')))->withDescription('This is a name.')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+        }
+
         $propertyMetadataFactoryProphecy->create('dummy', 'iri', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withIris(['https://schema.org/Dummy']));
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);
@@ -365,10 +382,19 @@ class DocumentationNormalizerTest extends TestCase
         ]));
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create('inputClass', 'a', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('a')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
-        $propertyMetadataFactoryProphecy->create('inputClass', 'b', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('b')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
-        $propertyMetadataFactoryProphecy->create('outputClass', 'c', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('c')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
-        $propertyMetadataFactoryProphecy->create('outputClass', 'd', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('d')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $propertyMetadataFactoryProphecy->create('inputClass', 'a', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('a')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+            $propertyMetadataFactoryProphecy->create('inputClass', 'b', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('b')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+            $propertyMetadataFactoryProphecy->create('outputClass', 'c', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('c')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+            $propertyMetadataFactoryProphecy->create('outputClass', 'd', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('d')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+        } else {
+            $propertyMetadataFactoryProphecy->create('inputClass', 'a', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withPhpType(Type::string())->withDescription('a')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+            $propertyMetadataFactoryProphecy->create('inputClass', 'b', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withPhpType(Type::string())->withDescription('b')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+            $propertyMetadataFactoryProphecy->create('outputClass', 'c', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withPhpType(Type::string())->withDescription('c')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+            $propertyMetadataFactoryProphecy->create('outputClass', 'd', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withPhpType(Type::string())->withDescription('d')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+        }
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);
         $resourceClassResolverProphecy->isResourceClass(Argument::type('string'))->willReturn(true);
@@ -500,18 +526,35 @@ class DocumentationNormalizerTest extends TestCase
         ]));
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
-            (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
-                ->withDescription('b')
-                ->withReadable(true)
-                ->withWritable(true)
-                ->withJsonldContext([
-                    'hydra:property' => [
-                        '@type' => 'https://schema.org/Enumeration',
-                    ],
-                ])
-        );
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())
+                    ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
+                    ->withDescription('b')
+                    ->withReadable(true)
+                    ->withWritable(true)
+                    ->withJsonldContext([
+                        'hydra:property' => [
+                            '@type' => 'https://schema.org/Enumeration',
+                        ],
+                    ])
+            );
+        } else {
+            $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())
+                    ->withPhpType(Type::string())
+                    ->withDescription('b')
+                    ->withReadable(true)
+                    ->withWritable(true)
+                    ->withJsonldContext([
+                        'hydra:property' => [
+                            '@type' => 'https://schema.org/Enumeration',
+                        ],
+                    ])
+            );
+        }
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);
         $resourceClassResolverProphecy->isResourceClass(Argument::type('string'))->willReturn(true);
@@ -563,16 +606,32 @@ class DocumentationNormalizerTest extends TestCase
         $propertyNameCollectionFactoryProphecy->create('dummy', [])->shouldBeCalled()->willReturn(new PropertyNameCollection(['name', 'description', 'nameConverted', 'relatedDummy', 'iri']));
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('name')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
-        );
-        $propertyMetadataFactoryProphecy->create('dummy', 'description', Argument::type('array'))->shouldBeCalled()->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('description')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)->withJsonldContext(['@type' => '@id'])
-        );
-        $propertyMetadataFactoryProphecy->create('dummy', 'nameConverted', Argument::type('array'))->shouldBeCalled()->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('name converted')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
-        );
-        $propertyMetadataFactoryProphecy->create('dummy', 'relatedDummy', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, 'dummy', true, null, new Type(Type::BUILTIN_TYPE_OBJECT, false, 'relatedDummy'))])->withDescription('This is a name.')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('name')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'description', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('description')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)->withJsonldContext(['@type' => '@id'])
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'nameConverted', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])->withDescription('name converted')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'relatedDummy', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'dummy', true, null, new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'relatedDummy'))])->withDescription('This is a name.')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+        } else {
+            $propertyMetadataFactoryProphecy->create('dummy', 'name', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())->withDescription('name')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'description', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())->withDescription('description')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)->withJsonldContext(['@type' => '@id'])
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'nameConverted', Argument::type('array'))->shouldBeCalled()->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())->withDescription('name converted')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true)
+            );
+            $propertyMetadataFactoryProphecy->create('dummy', 'relatedDummy', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withPhpType(Type::collection(Type::object('dummy'), Type::object('relatedDummy')))->withDescription('This is a name.')->withReadable(true)->withWritable(true)->withReadableLink(true)->withWritableLink(true));
+        }
+
         $propertyMetadataFactoryProphecy->create('dummy', 'iri', Argument::type('array'))->shouldBeCalled()->willReturn((new ApiProperty())->withIris(['https://schema.org/Dummy']));
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);

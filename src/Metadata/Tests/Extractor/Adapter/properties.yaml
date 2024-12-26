@@ -41,3 +41,4 @@ properties:
             uriTemplate: /sub-resource-get-collection
             property: test
             hydra: false
+            phpType: string

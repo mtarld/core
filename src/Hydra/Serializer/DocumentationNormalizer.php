@@ -29,10 +29,15 @@ use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInter
 use ApiPlatform\Metadata\Resource\ResourceMetadataCollection;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use ApiPlatform\Metadata\UrlGeneratorInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\TypeInfo\TypeIdentifier;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 
 use const ApiPlatform\JsonLd\HYDRA_CONTEXT;
 
@@ -355,61 +360,105 @@ final class DocumentationNormalizer implements NormalizerInterface
             return $jsonldContext['@type'];
         }
 
-        $builtInTypes = $propertyMetadata->getBuiltinTypes() ?? [];
         $types = [];
 
-        foreach ($builtInTypes as $type) {
-            if ($type->isCollection() && null !== $collectionType = $type->getCollectionValueTypes()[0] ?? null) {
-                $type = $collectionType;
-            }
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists($propertyMetadata, 'getPhpType')) {
+            $builtInTypes = $propertyMetadata->getBuiltinTypes() ?? [];
 
-            switch ($type->getBuiltinType()) {
-                case Type::BUILTIN_TYPE_STRING:
-                    if (!\in_array('xmls:string', $types, true)) {
-                        $types[] = 'xmls:string';
-                    }
-                    break;
-                case Type::BUILTIN_TYPE_INT:
-                    if (!\in_array('xmls:integer', $types, true)) {
-                        $types[] = 'xmls:integer';
-                    }
-                    break;
-                case Type::BUILTIN_TYPE_FLOAT:
-                    if (!\in_array('xmls:decimal', $types, true)) {
-                        $types[] = 'xmls:decimal';
-                    }
-                    break;
-                case Type::BUILTIN_TYPE_BOOL:
-                    if (!\in_array('xmls:boolean', $types, true)) {
-                        $types[] = 'xmls:boolean';
-                    }
-                    break;
-                case Type::BUILTIN_TYPE_OBJECT:
-                    if (null === $className = $type->getClassName()) {
-                        continue 2;
-                    }
+            foreach ($builtInTypes as $type) {
+                if ($type->isCollection() && null !== $collectionType = $type->getCollectionValueTypes()[0] ?? null) {
+                    $type = $collectionType;
+                }
 
-                    if (is_a($className, \DateTimeInterface::class, true)) {
-                        if (!\in_array('xmls:dateTime', $types, true)) {
-                            $types[] = 'xmls:dateTime';
+                switch ($type->getBuiltinType()) {
+                    case LegacyType::BUILTIN_TYPE_STRING:
+                        if (!\in_array('xmls:string', $types, true)) {
+                            $types[] = 'xmls:string';
                         }
                         break;
-                    }
+                    case LegacyType::BUILTIN_TYPE_INT:
+                        if (!\in_array('xmls:integer', $types, true)) {
+                            $types[] = 'xmls:integer';
+                        }
+                        break;
+                    case LegacyType::BUILTIN_TYPE_FLOAT:
+                        if (!\in_array('xmls:decimal', $types, true)) {
+                            $types[] = 'xmls:decimal';
+                        }
+                        break;
+                    case LegacyType::BUILTIN_TYPE_BOOL:
+                        if (!\in_array('xmls:boolean', $types, true)) {
+                            $types[] = 'xmls:boolean';
+                        }
+                        break;
+                    case LegacyType::BUILTIN_TYPE_OBJECT:
+                        if (null === $className = $type->getClassName()) {
+                            continue 2;
+                        }
 
-                    if ($this->resourceClassResolver->isResourceClass($className)) {
-                        $resourceMetadata = $this->resourceMetadataFactory->create($className);
-                        $operation = $resourceMetadata->getOperation();
-
-                        if (!$operation instanceof HttpOperation || !$operation->getTypes()) {
-                            if (!\in_array("#{$operation->getShortName()}", $types, true)) {
-                                $types[] = "#{$operation->getShortName()}";
+                        if (is_a($className, \DateTimeInterface::class, true)) {
+                            if (!\in_array('xmls:dateTime', $types, true)) {
+                                $types[] = 'xmls:dateTime';
                             }
                             break;
                         }
 
-                        $types = array_unique(array_merge($types, $operation->getTypes()));
+                        if ($this->resourceClassResolver->isResourceClass($className)) {
+                            $resourceMetadata = $this->resourceMetadataFactory->create($className);
+                            $operation = $resourceMetadata->getOperation();
+
+                            if (!$operation instanceof HttpOperation || !$operation->getTypes()) {
+                                if (!\in_array("#{$operation->getShortName()}", $types, true)) {
+                                    $types[] = "#{$operation->getShortName()}";
+                                }
+                                break;
+                            }
+
+                            $types = array_unique(array_merge($types, $operation->getTypes()));
+                            break;
+                        }
+                }
+            }
+        } elseif ($phpType = $propertyMetadata->getPhpType()) {
+            foreach ($phpType instanceof CompositeTypeInterface ? $phpType->getTypes() : [$phpType] as $t) {
+                if ($t instanceof CollectionType) {
+                    $t = $t->getCollectionValueType();
+                }
+
+                if ($t->isIdentifiedBy(TypeIdentifier::STRING)) {
+                    if (!\in_array('xmls:string', $types, true)) {
+                        $types[] = 'xmls:string';
+                    }
+                } elseif ($t->isIdentifiedBy(TypeIdentifier::INT)) {
+                    if (!\in_array('xmls:integer', $types, true)) {
+                        $types[] = 'xmls:integer';
+                    }
+                } elseif ($t->isIdentifiedBy(TypeIdentifier::FLOAT)) {
+                    if (!\in_array('xmls:decimal', $types, true)) {
+                        $types[] = 'xmls:decimal';
+                    }
+                } elseif ($t->isIdentifiedBy(TypeIdentifier::BOOL)) {
+                    if (!\in_array('xmls:boolean', $types, true)) {
+                        $types[] = 'xmls:boolean';
+                    }
+                } elseif ($t->isIdentifiedBy(\DateTimeInterface::class)) {
+                    if (!\in_array('xmls:dateTime', $types, true)) {
+                        $types[] = 'xmls:dateTime';
+                    }
+                } elseif ($t instanceof ObjectType && $this->resourceClassResolver->isResourceClass($t->getClassName())) {
+                    $resourceMetadata = $this->resourceMetadataFactory->create($t->getClassName());
+                    $operation = $resourceMetadata->getOperation();
+
+                    if (!$operation instanceof HttpOperation || !$operation->getTypes()) {
+                        if (!\in_array("#{$operation->getShortName()}", $types, true)) {
+                            $types[] = "#{$operation->getShortName()}";
+                        }
                         break;
                     }
+
+                    $types = array_unique(array_merge($types, $operation->getTypes()));
+                }
             }
         }
 
@@ -422,16 +471,33 @@ final class DocumentationNormalizer implements NormalizerInterface
 
     private function isSingleRelation(ApiProperty $propertyMetadata): bool
     {
-        $builtInTypes = $propertyMetadata->getBuiltinTypes() ?? [];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists($propertyMetadata, 'getPhpType')) {
+            $builtInTypes = $propertyMetadata->getBuiltinTypes() ?? [];
 
-        foreach ($builtInTypes as $type) {
-            $className = $type->getClassName();
-            if (
-                !$type->isCollection()
-                && null !== $className
-                && $this->resourceClassResolver->isResourceClass($className)
-            ) {
-                return true;
+            foreach ($builtInTypes as $type) {
+                $className = $type->getClassName();
+                if (
+                    !$type->isCollection()
+                        && null !== $className
+                        && $this->resourceClassResolver->isResourceClass($className)
+                ) {
+                    return true;
+                }
+            }
+        } elseif ($phpType = $propertyMetadata->getPhpType()) {
+            foreach ($phpType instanceof CompositeTypeInterface ? $phpType->getTypes() : [$phpType] as $t) {
+                if ($t instanceof CollectionType) {
+                    continue;
+                }
+
+                while ($t instanceof WrappingTypeInterface) {
+                    $t = $t->getWrappedType();
+                }
+
+                if ($t instanceof ObjectType && $this->resourceClassResolver->isResourceClass($t->getClassName())) {
+                    return true;
+                }
             }
         }
 

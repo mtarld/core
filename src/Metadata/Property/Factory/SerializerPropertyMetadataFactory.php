@@ -19,6 +19,10 @@ use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use ApiPlatform\Metadata\Util\ResourceClassInfoTrait;
 use Symfony\Component\Serializer\Mapping\AttributeMetadataInterface;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactoryInterface as SerializerClassMetadataFactoryInterface;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
 
 /**
  * Populates read/write and link status using serialization groups.
@@ -60,17 +64,15 @@ final class SerializerPropertyMetadataFactory implements PropertyMetadataFactory
         }
 
         $propertyMetadata = $this->transformReadWrite($propertyMetadata, $resourceClass, $property, $normalizationGroups, $denormalizationGroups, $ignoredAttributes);
-        $types = $propertyMetadata->getBuiltinTypes() ?? [];
+        $type = $propertyMetadata->getPhpType();
 
-        if (!$this->isResourceClass($resourceClass) && $types) {
-            foreach ($types as $builtinType) {
-                if ($builtinType->isCollection()) {
-                    return $propertyMetadata->withReadableLink(true)->withWritableLink(true);
-                }
+        if ($type && !$this->isResourceClass($resourceClass)) {
+            if ($type->isSatisfiedBy(static fn (Type $t): bool => $t instanceof CollectionType)) {
+                return $propertyMetadata->withReadableLink(true)->withWritableLink(true);
             }
         }
 
-        return $this->transformLinkStatus($propertyMetadata, $normalizationGroups, $denormalizationGroups, $types);
+        return $this->transformLinkStatus($propertyMetadata, $normalizationGroups, $denormalizationGroups, $type);
     }
 
     /**
@@ -112,25 +114,31 @@ final class SerializerPropertyMetadataFactory implements PropertyMetadataFactory
      * @param string[]|null $normalizationGroups
      * @param string[]|null $denormalizationGroups
      */
-    private function transformLinkStatus(ApiProperty $propertyMetadata, ?array $normalizationGroups = null, ?array $denormalizationGroups = null, ?array $types = null): ApiProperty
+    private function transformLinkStatus(ApiProperty $propertyMetadata, ?array $normalizationGroups = null, ?array $denormalizationGroups = null, ?Type $type = null): ApiProperty
     {
         // No need to check link status if property is not readable and not writable
         if (false === $propertyMetadata->isReadable() && false === $propertyMetadata->isWritable()) {
             return $propertyMetadata;
         }
 
-        foreach ($types as $type) {
-            if (
-                $type->isCollection()
-                && $collectionValueType = $type->getCollectionValueTypes()[0] ?? null
-            ) {
-                $relatedClass = $collectionValueType->getClassName();
-            } else {
-                $relatedClass = $type->getClassName();
+        if (!$type) {
+            return $propertyMetadata;
+        }
+
+        /** @var class-string|null $relatedClass */
+        $relatedClass = null;
+
+        $typeIsResourceClass = function (Type $type) use (&$relatedClass): bool {
+            return $type instanceof ObjectType && $this->isResourceClass($relatedClass = $type->getClassName());
+        };
+
+        foreach ($type instanceof CompositeTypeInterface ? $type->getTypes() : [$type] as $t) {
+            if ($t instanceof CollectionType) {
+                $t = $t->getCollectionValueType();
             }
 
             // if property is not a resource relation, don't set link status (as it would have no meaning)
-            if (null === $relatedClass || !$this->isResourceClass($relatedClass)) {
+            if (!$t->isSatisfiedBy($typeIsResourceClass)) {
                 continue;
             }
 

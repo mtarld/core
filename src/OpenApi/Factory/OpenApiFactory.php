@@ -57,9 +57,10 @@ use ApiPlatform\State\ApiResource\Error as ApiResourceError;
 use ApiPlatform\State\Pagination\PaginationOptions;
 use ApiPlatform\Validator\Exception\ValidationException;
 use Psr\Container\ContainerInterface;
-use Symfony\Component\PropertyInfo\Type;
 use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\TypeIdentifier;
 
 /**
  * Generates an Open API v3 specification.
@@ -690,8 +691,13 @@ final class OpenApiFactory implements OpenApiFactoryInterface
         if (!isset($description['openapi']) || $description['openapi'] instanceof Parameter) {
             $schema = $description['schema'] ?? [];
 
-            if (isset($description['type']) && \in_array($description['type'], Type::$builtinTypes, true) && !isset($schema['type'])) {
-                $schema += $this->getType(new Type($description['type'], false, null, $description['is_collection'] ?? false));
+            if (isset($description['type']) && \in_array($description['type'], TypeIdentifier::values(), true) && !isset($schema['type'])) {
+                $type = Type::builtin($description['type']);
+                if (($description['is_collection'] ?? false) && $type->isIdentifiedBy(TypeIdentifier::ARRAY, TypeIdentifier::ITERABLE)) {
+                    $type = Type::collection($type, key: Type::int());
+                }
+
+                $schema += $this->getType($type);
             }
 
             if (!isset($schema['type'])) {
@@ -700,7 +706,7 @@ final class OpenApiFactory implements OpenApiFactoryInterface
 
             $style = 'array' === ($schema['type'] ?? null) && \in_array(
                 $description['type'],
-                [Type::BUILTIN_TYPE_ARRAY, Type::BUILTIN_TYPE_OBJECT],
+                [TypeIdentifier::ARRAY->value, TypeIdentifier::OBJECT->value],
                 true
             ) ? 'deepObject' : 'form';
 
@@ -718,7 +724,21 @@ final class OpenApiFactory implements OpenApiFactoryInterface
         }
 
         trigger_deprecation('api-platform/core', '4.0', \sprintf('Not using "%s" on the "openapi" field of the %s::getDescription() (%s) is deprecated.', Parameter::class, $filter, $shortName));
-        $schema = $description['schema'] ?? (\in_array($description['type'], Type::$builtinTypes, true) ? $this->getType(new Type($description['type'], false, null, $description['is_collection'] ?? false)) : ['type' => 'string']);
+
+        $schema = $description['schema'] ?? null;
+
+        if (!$schema) {
+            if (\in_array($description['type'], TypeIdentifier::values(), true)) {
+                $type = Type::builtin($description['type']);
+                if ($description['is_collection'] ?? false && $type->isIdentifiedBy(TypeIdentifier::ARRAY, TypeIdentifier::ITERABLE)) {
+                    $type = Type::collection($type, key: Type::int());
+                }
+
+                $schema = $this->getType($type);
+            } else {
+                $schema = ['type' => 'string'];
+            }
+        }
 
         return new Parameter(
             $name,
@@ -730,7 +750,7 @@ final class OpenApiFactory implements OpenApiFactoryInterface
             $schema,
             'array' === $schema['type'] && \in_array(
                 $description['type'],
-                [Type::BUILTIN_TYPE_ARRAY, Type::BUILTIN_TYPE_OBJECT],
+                [TypeIdentifier::ARRAY->value, TypeIdentifier::OBJECT->value],
                 true
             ) ? 'deepObject' : 'form',
             $description['openapi']['explode'] ?? ('array' === $schema['type']),

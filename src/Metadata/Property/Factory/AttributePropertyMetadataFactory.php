@@ -121,6 +121,11 @@ final class AttributePropertyMetadataFactory implements PropertyMetadataFactoryI
         }
 
         foreach (get_class_methods(ApiProperty::class) as $method) {
+            // getBuiltinTypes is deprecated
+            if ('getBuiltinTypes' === $method) {
+                continue;
+            }
+
             if (preg_match('/^(?:get|is)(.*)/', (string) $method, $matches) && null !== $val = $attribute->{$method}()) {
                 $propertyMetadata = $propertyMetadata->{"with{$matches[1]}"}($val);
             }

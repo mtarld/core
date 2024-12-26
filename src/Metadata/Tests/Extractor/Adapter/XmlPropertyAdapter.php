@@ -46,6 +46,7 @@ final class XmlPropertyAdapter implements PropertyAdapterInterface
         'uriTemplate',
         'hydra',
         'property',
+        'phpType',
     ];
 
     // TODO: add serialize support for XML (policy is Laravel-only)

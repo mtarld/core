@@ -17,7 +17,8 @@ use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Symfony\Validator\Metadata\Property\Restriction\PropertySchemaLessThanOrEqualRestriction;
 use PHPUnit\Framework\TestCase;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\LessThanOrEqual;
 use Symfony\Component\Validator\Constraints\Negative;
@@ -45,16 +46,31 @@ final class PropertySchemaLessThanOrEqualRestrictionTest extends TestCase
 
     public static function supportsProvider(): \Generator
     {
-        yield 'supported int/float with union types' => [new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_FLOAT)]), true];
-        yield 'supported int' => [new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]), true];
-        yield 'supported float' => [new LessThanOrEqual(['value' => 10.99]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_FLOAT)]), true];
-        yield 'supported negative or zero' => [new NegativeOrZero(), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]), true];
-        yield 'not supported negative' => [new Negative(), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]), false];
-        yield 'not supported property path' => [new LessThanOrEqual(['propertyPath' => 'greaterThanMe']), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]), false];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            yield 'supported int/float with union types' => [new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]), true];
+            yield 'supported int' => [new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]), true];
+            yield 'supported float' => [new LessThanOrEqual(['value' => 10.99]), (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]), true];
+            yield 'supported negative or zero' => [new NegativeOrZero(), (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]), true];
+            yield 'not supported negative' => [new Negative(), (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]), false];
+            yield 'not supported property path' => [new LessThanOrEqual(['propertyPath' => 'greaterThanMe']), (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]), false];
+        } else {
+            yield 'supported int/float with union types' => [new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withPhpType(Type::union(Type::int(), Type::float())), true];
+            yield 'supported int' => [new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withPhpType(Type::int()), true];
+            yield 'supported float' => [new LessThanOrEqual(['value' => 10.99]), (new ApiProperty())->withPhpType(Type::float()), true];
+            yield 'supported negative or zero' => [new NegativeOrZero(), (new ApiProperty())->withPhpType(Type::int()), true];
+            yield 'not supported negative' => [new Negative(), (new ApiProperty())->withPhpType(Type::int()), false];
+            yield 'not supported property path' => [new LessThanOrEqual(['propertyPath' => 'greaterThanMe']), (new ApiProperty())->withPhpType(Type::int()), false];
+        }
     }
 
     public function testCreate(): void
     {
-        self::assertEquals(['maximum' => 10], $this->propertySchemaLessThanOrEqualRestriction->create(new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)])));
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            self::assertEquals(['maximum' => 10], $this->propertySchemaLessThanOrEqualRestriction->create(new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)])));
+        } else {
+            self::assertEquals(['maximum' => 10], $this->propertySchemaLessThanOrEqualRestriction->create(new LessThanOrEqual(['value' => 10]), (new ApiProperty())->withPhpType(Type::int())));
+        }
     }
 }
