@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace ApiPlatform\Elasticsearch\Tests\Util;
 
+use ApiPlatform\Elasticsearch\Tests\ApiPropertyTypeLegacyTrait;
 use ApiPlatform\Elasticsearch\Tests\Fixtures\Foo;
 use ApiPlatform\Elasticsearch\Util\FieldDatatypeTrait;
 use ApiPlatform\Metadata\ApiProperty;
@@ -21,11 +22,13 @@ use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use PHPUnit\Framework\TestCase;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
 
 class FieldDatatypeTraitTest extends TestCase
 {
     use ProphecyTrait;
+    use ApiPropertyTypeLegacyTrait;
 
     public function testGetNestedFieldPath(): void
     {
@@ -70,8 +73,15 @@ class FieldDatatypeTraitTest extends TestCase
 
     public function testGetNestedFieldPathWithInvalidCollectionType(): void
     {
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $type = Type::string();
+        } else {
+            $type = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
+
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn($this->apiPropertyWithPhpOrBuiltinType($type))->shouldBeCalled();
 
         $fieldDatatype = self::createFieldDatatypeInstance($propertyMetadataFactoryProphecy->reveal(),
             $this->prophesize(ResourceClassResolverInterface::class)->reveal());
@@ -90,14 +100,21 @@ class FieldDatatypeTraitTest extends TestCase
 
     private function getValidFieldDatatype()
     {
-        $fooType = new Type(Type::BUILTIN_TYPE_OBJECT, false, Foo::class);
-        $barType = new Type(Type::BUILTIN_TYPE_ARRAY, false, Foo::class, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, Foo::class));
-        $bazType = new Type(Type::BUILTIN_TYPE_STRING, false, Foo::class);
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $fooType = Type::object(Foo::class);
+            $barType = Type::list(Type::object(Foo::class));
+            $bazType = Type::string();
+        } else {
+            $fooType = [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Foo::class)];
+            $barType = [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, Foo::class, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Foo::class))];
+            $bazType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, Foo::class)];
+        }
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn((new ApiProperty())->withBuiltinTypes([$fooType]))->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn((new ApiProperty())->withBuiltinTypes([$barType]))->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'baz')->willReturn((new ApiProperty())->withBuiltinTypes([$bazType]));
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn($this->apiPropertyWithPhpOrBuiltinType($fooType))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn($this->apiPropertyWithPhpOrBuiltinType($barType))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'baz')->willReturn($this->apiPropertyWithPhpOrBuiltinType($bazType));
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);
         $resourceClassResolverProphecy->isResourceClass(Foo::class)->willReturn(true)->shouldBeCalled();

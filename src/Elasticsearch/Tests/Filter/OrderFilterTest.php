@@ -15,6 +15,7 @@ namespace ApiPlatform\Elasticsearch\Tests\Filter;
 
 use ApiPlatform\Elasticsearch\Filter\OrderFilter;
 use ApiPlatform\Elasticsearch\Filter\SortFilterInterface;
+use ApiPlatform\Elasticsearch\Tests\ApiPropertyTypeLegacyTrait;
 use ApiPlatform\Elasticsearch\Tests\Fixtures\Foo;
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
@@ -24,12 +25,14 @@ use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use PHPUnit\Framework\TestCase;
 use Prophecy\Argument;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
+use Symfony\Component\TypeInfo\Type;
 
 class OrderFilterTest extends TestCase
 {
     use ProphecyTrait;
+    use ApiPropertyTypeLegacyTrait;
 
     public function testConstruct(): void
     {
@@ -46,8 +49,15 @@ class OrderFilterTest extends TestCase
 
     public function testApply(): void
     {
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $type = Type::string();
+        } else {
+            $type = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
+
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn($this->apiPropertyWithPhpOrBuiltinType($type))->shouldBeCalled();
 
         $nameConverterProphecy = $this->prophesize(NameConverterInterface::class);
         $nameConverterProphecy->normalize('name', Foo::class, null, Argument::type('array'))->willReturn('name')->shouldBeCalled();
@@ -69,12 +79,18 @@ class OrderFilterTest extends TestCase
 
     public function testApplyWithNestedProperty(): void
     {
-        $fooType = new Type(Type::BUILTIN_TYPE_ARRAY, false, Foo::class, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, Foo::class));
-        $barType = new Type(Type::BUILTIN_TYPE_STRING);
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $fooType = Type::list(Type::object(Foo::class));
+            $barType = Type::string();
+        } else {
+            $fooType = [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, Foo::class, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Foo::class))];
+            $barType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn((new ApiProperty())->withBuiltinTypes([$fooType]))->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn((new ApiProperty())->withBuiltinTypes([$barType]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn($this->apiPropertyWithPhpOrBuiltinType($fooType))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn($this->apiPropertyWithPhpOrBuiltinType($barType))->shouldBeCalled();
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);
         $resourceClassResolverProphecy->isResourceClass(Foo::class)->willReturn(true)->shouldBeCalled();
@@ -113,8 +129,15 @@ class OrderFilterTest extends TestCase
 
     public function testApplyWithInvalidTypeAndInvalidDirection(): void
     {
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $type = Type::string();
+        } else {
+            $type = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
+
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn($this->apiPropertyWithPhpOrBuiltinType($type))->shouldBeCalled();
         $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn(new ApiProperty())->shouldBeCalled();
 
         $propertyNameCollectionFactoryProphecy = $this->prophesize(PropertyNameCollectionFactoryInterface::class);
@@ -136,8 +159,15 @@ class OrderFilterTest extends TestCase
 
     public function testDescription(): void
     {
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $type = Type::string();
+        } else {
+            $type = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
+
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn($this->apiPropertyWithPhpOrBuiltinType($type))->shouldBeCalled();
         $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn(new ApiProperty())->shouldBeCalled();
 
         $orderFilter = new OrderFilter(

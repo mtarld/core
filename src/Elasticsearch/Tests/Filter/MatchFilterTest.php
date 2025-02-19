@@ -15,6 +15,7 @@ namespace ApiPlatform\Elasticsearch\Tests\Filter;
 
 use ApiPlatform\Elasticsearch\Filter\ConstantScoreFilterInterface;
 use ApiPlatform\Elasticsearch\Filter\MatchFilter;
+use ApiPlatform\Elasticsearch\Tests\ApiPropertyTypeLegacyTrait;
 use ApiPlatform\Elasticsearch\Tests\Fixtures\Foo;
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Exception\InvalidArgumentException;
@@ -27,12 +28,14 @@ use PHPUnit\Framework\TestCase;
 use Prophecy\Argument;
 use Prophecy\PhpUnit\ProphecyTrait;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
+use Symfony\Component\TypeInfo\Type;
 
 class MatchFilterTest extends TestCase
 {
     use ProphecyTrait;
+    use ApiPropertyTypeLegacyTrait;
 
     public function testConstruct(): void
     {
@@ -54,9 +57,18 @@ class MatchFilterTest extends TestCase
         $propertyNameCollectionFactoryProphecy = $this->prophesize(PropertyNameCollectionFactoryInterface::class);
         $propertyNameCollectionFactoryProphecy->create(Foo::class)->willReturn(new PropertyNameCollection(['id', 'name', 'bar']))->shouldBeCalled();
 
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $idType = Type::int();
+            $nameType = Type::string();
+        } else {
+            $idType = [new LegacyType(LegacyType::BUILTIN_TYPE_INT)];
+            $nameType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
+
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'id')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]))->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'id')->willReturn($this->apiPropertyWithPhpOrBuiltinType($idType))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn($this->apiPropertyWithPhpOrBuiltinType($nameType))->shouldBeCalled();
 
         $foo = new Foo();
         $foo->setName('Xavier');
@@ -89,12 +101,18 @@ class MatchFilterTest extends TestCase
 
     public function testApplyWithNestedArrayProperty(): void
     {
-        $fooType = new Type(Type::BUILTIN_TYPE_ARRAY, false, Foo::class, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, Foo::class));
-        $barType = new Type(Type::BUILTIN_TYPE_STRING);
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $fooType = Type::list(Type::object(Foo::class));
+            $barType = Type::string();
+        } else {
+            $fooType = [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, Foo::class, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Foo::class))];
+            $barType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn((new ApiProperty())->withBuiltinTypes([$fooType]))->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn((new ApiProperty())->withBuiltinTypes([$barType]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn($this->apiPropertyWithPhpOrBuiltinType($fooType))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn($this->apiPropertyWithPhpOrBuiltinType($barType))->shouldBeCalled();
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);
         $resourceClassResolverProphecy->isResourceClass(Foo::class)->willReturn(true)->shouldBeCalled();
@@ -121,12 +139,18 @@ class MatchFilterTest extends TestCase
 
     public function testApplyWithNestedObjectProperty(): void
     {
-        $fooType = new Type(Type::BUILTIN_TYPE_OBJECT, false, Foo::class);
-        $barType = new Type(Type::BUILTIN_TYPE_STRING);
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $fooType = Type::object(Foo::class);
+            $barType = Type::string();
+        } else {
+            $fooType = [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Foo::class)];
+            $barType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+        }
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn((new ApiProperty())->withBuiltinTypes([$fooType]))->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn((new ApiProperty())->withBuiltinTypes([$barType]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'foo')->willReturn($this->apiPropertyWithPhpOrBuiltinType($fooType))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn($this->apiPropertyWithPhpOrBuiltinType($barType))->shouldBeCalled();
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);
         $resourceClassResolverProphecy->isResourceClass(Foo::class)->willReturn(true)->shouldBeCalled();
@@ -152,11 +176,18 @@ class MatchFilterTest extends TestCase
 
     public function testApplyWithInvalidFilters(): void
     {
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $type = Type::int();
+        } else {
+            $type = [new LegacyType(LegacyType::BUILTIN_TYPE_INT)];
+        }
+
         $propertyNameCollectionFactoryProphecy = $this->prophesize(PropertyNameCollectionFactoryInterface::class);
         $propertyNameCollectionFactoryProphecy->create(Foo::class)->willReturn(new PropertyNameCollection(['id', 'bar']))->shouldBeCalled();
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'id')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'id')->willReturn($this->apiPropertyWithPhpOrBuiltinType($type))->shouldBeCalled();
         $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn(new ApiProperty())->shouldBeCalled();
 
         $iriConverterProphecy = $this->prophesize(IriConverterInterface::class);
@@ -179,15 +210,28 @@ class MatchFilterTest extends TestCase
 
     public function testGetDescription(): void
     {
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $idType = Type::int();
+            $nameType = Type::string();
+            $dateType = Type::object(\DateTimeImmutable::class);
+            $weirdType = Type::resource();
+        } else {
+            $idType = [new LegacyType(LegacyType::BUILTIN_TYPE_INT)];
+            $nameType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+            $dateType = [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, \DateTimeImmutable::class)];
+            $weirdType = [new LegacyType(LegacyType::BUILTIN_TYPE_RESOURCE)];
+        }
+
         $propertyNameCollectionFactoryProphecy = $this->prophesize(PropertyNameCollectionFactoryInterface::class);
         $propertyNameCollectionFactoryProphecy->create(Foo::class)->willReturn(new PropertyNameCollection(['id', 'name', 'bar', 'date', 'weird']))->shouldBeCalled();
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'id')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]))->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'id')->willReturn($this->apiPropertyWithPhpOrBuiltinType($idType))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'name')->willReturn($this->apiPropertyWithPhpOrBuiltinType($nameType))->shouldBeCalled();
         $propertyMetadataFactoryProphecy->create(Foo::class, 'bar')->willReturn(new ApiProperty())->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'date')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, \DateTimeImmutable::class)]))->shouldBeCalled();
-        $propertyMetadataFactoryProphecy->create(Foo::class, 'weird')->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_RESOURCE)]))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'date')->willReturn($this->apiPropertyWithPhpOrBuiltinType($dateType))->shouldBeCalled();
+        $propertyMetadataFactoryProphecy->create(Foo::class, 'weird')->willReturn($this->apiPropertyWithPhpOrBuiltinType($weirdType))->shouldBeCalled();
 
         $resourceClassResolverProphecy = $this->prophesize(ResourceClassResolverInterface::class);
         $resourceClassResolverProphecy->isResourceClass(\DateTimeImmutable::class)->willReturn(false)->shouldBeCalled();

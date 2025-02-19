@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace ApiPlatform\Elasticsearch\Filter;
 
+use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Exception\InvalidArgumentException;
 use ApiPlatform\Metadata\HttpOperation;
 use ApiPlatform\Metadata\IriConverterInterface;
@@ -21,7 +22,10 @@ use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use ApiPlatform\Metadata\Property\Factory\PropertyNameCollectionFactoryInterface;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\TypeIdentifier;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 
 /**
@@ -45,7 +49,12 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
         $searches = [];
 
         foreach ($context['filters'] ?? [] as $property => $values) {
-            [$type, $hasAssociation, $nestedResourceClass, $nestedProperty] = $this->getMetadata($resourceClass, $property);
+            // BC layer for api-platform/metadata < 4.1
+            if (method_exists(ApiProperty::class, 'getPhpType')) {
+                [$type, $hasAssociation, $nestedResourceClass, $nestedProperty] = $this->getFilterMetadata($resourceClass, $property);
+            } else {
+                [$type, $hasAssociation, $nestedResourceClass, $nestedProperty] = $this->getMetadata($resourceClass, $property);
+            }
 
             if (!$type || !$values = (array) $values) {
                 continue;
@@ -55,8 +64,15 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
                 $values = array_map($this->getIdentifierValue(...), $values, array_fill(0, \count($values), $nestedProperty));
             }
 
-            if (!$this->hasValidValues($values, $type)) {
-                continue;
+            // BC layer for api-platform/metadata < 4.1
+            if (method_exists(ApiProperty::class, 'getPhpType')) {
+                if (!$this->hasValidValuesAgainstType($values, $type)) {
+                    continue;
+                }
+            } else {
+                if (!$this->hasValidValues($values, $type)) {
+                    continue;
+                }
             }
 
             $property = null === $this->nameConverter ? $property : $this->nameConverter->normalize($property, $resourceClass, null, $context);
@@ -85,16 +101,31 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
         $description = [];
 
         foreach ($this->getProperties($resourceClass) as $property) {
-            [$type, $hasAssociation] = $this->getMetadata($resourceClass, $property);
+            // BC layer for api-platform/metadata < 4.1
+            if (method_exists(ApiProperty::class, 'getPhpType')) {
+                [$type, $hasAssociation] = $this->getFilterMetadata($resourceClass, $property);
+            } else {
+                [$type, $hasAssociation] = $this->getMetadata($resourceClass, $property);
+            }
 
             if (!$type) {
                 continue;
             }
 
+            $typeString = 'string';
+
+            if (!$hasAssociation) {
+                if (method_exists(ApiProperty::class, 'getPhpType')) {
+                    $typeString = $this->getPhpTypeString($type);
+                } else {
+                    $typeString = $this->getPhpType($type);
+                }
+            }
+
             foreach ([$property, "{$property}[]"] as $filterParameterName) {
                 $description[$filterParameterName] = [
                     'property' => $property,
-                    'type' => $hasAssociation ? 'string' : $this->getPhpType($type),
+                    'type' => $typeString,
                     'required' => false,
                     'is_collection' => str_ends_with((string) $filterParameterName, '[]'),
                 ];
@@ -110,18 +141,18 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
     abstract protected function getQuery(string $property, array $values, ?string $nestedPath): array;
 
     /**
-     * Converts the given {@see Type} in PHP type.
+     * Converts the given {@see LegacyType} in PHP type.
      */
-    protected function getPhpType(Type $type): string
+    protected function getPhpType(LegacyType $type): string
     {
         switch ($builtinType = $type->getBuiltinType()) {
-            case Type::BUILTIN_TYPE_ARRAY:
-            case Type::BUILTIN_TYPE_INT:
-            case Type::BUILTIN_TYPE_FLOAT:
-            case Type::BUILTIN_TYPE_BOOL:
-            case Type::BUILTIN_TYPE_STRING:
+            case LegacyType::BUILTIN_TYPE_ARRAY:
+            case LegacyType::BUILTIN_TYPE_INT:
+            case LegacyType::BUILTIN_TYPE_FLOAT:
+            case LegacyType::BUILTIN_TYPE_BOOL:
+            case LegacyType::BUILTIN_TYPE_STRING:
                 return $builtinType;
-            case Type::BUILTIN_TYPE_OBJECT:
+            case LegacyType::BUILTIN_TYPE_OBJECT:
                 if (null !== ($className = $type->getClassName()) && is_a($className, \DateTimeInterface::class, true)) {
                     return \DateTimeInterface::class;
                 }
@@ -130,6 +161,23 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
             default:
                 return 'string';
         }
+    }
+
+    protected function getPhpTypeString(Type $type): string
+    {
+        if ($type->isIdentifiedBy(TypeIdentifier::ARRAY, TypeIdentifier::INT, TypeIdentifier::FLOAT, TypeIdentifier::BOOL, TypeIdentifier::STRING)) {
+            while ($type instanceof WrappingTypeInterface) {
+                $type = $type->getWrappedType();
+            }
+
+            return (string) $type;
+        }
+
+        if ($type->isIdentifiedBy(\DateTimeInterface::class)) {
+            return \DateTimeInterface::class;
+        }
+
+        return 'string';
     }
 
     /**
@@ -164,15 +212,30 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
         return $iri;
     }
 
-    /**
-     * Are the given values valid according to the given {@see Type}?
-     */
-    protected function hasValidValues(array $values, Type $type): bool
+    protected function hasValidValuesAgainstType(array $values, Type $type): bool
     {
         foreach ($values as $value) {
             if (
                 null !== $value
-                && Type::BUILTIN_TYPE_INT === $type->getBuiltinType()
+                && $type->isIdentifiedBy(TypeIdentifier::INT)
+                && false === filter_var($value, \FILTER_VALIDATE_INT)
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Are the given values valid according to the given {@see LegacyType}?
+     */
+    protected function hasValidValues(array $values, LegacyType $type): bool
+    {
+        foreach ($values as $value) {
+            if (
+                null !== $value
+                && LegacyType::BUILTIN_TYPE_INT === $type->getBuiltinType()
                 && false === filter_var($value, \FILTER_VALIDATE_INT)
             ) {
                 return false;

@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace ApiPlatform\Elasticsearch\Filter;
 
+use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use ApiPlatform\Metadata\Property\Factory\PropertyNameCollectionFactoryInterface;
@@ -131,7 +132,12 @@ final class OrderFilter extends AbstractFilter implements SortFilterInterface
         $orders = [];
 
         foreach ($properties as $property => $direction) {
-            [$type] = $this->getMetadata($resourceClass, $property);
+            // BC layer for api-platform/metadata < 4.1
+            if (method_exists(ApiProperty::class, 'getPhpType')) {
+                [$type] = $this->getFilterMetadata($resourceClass, $property);
+            } else {
+                [$type] = $this->getMetadata($resourceClass, $property);
+            }
 
             if (!$type) {
                 continue;
@@ -171,7 +177,12 @@ final class OrderFilter extends AbstractFilter implements SortFilterInterface
         $description = [];
 
         foreach ($this->getProperties($resourceClass) as $property) {
-            [$type] = $this->getMetadata($resourceClass, $property);
+            // BC layer for api-platform/metadata < 4.1
+            if (method_exists(ApiProperty::class, 'getPhpType')) {
+                [$type] = $this->getFilterMetadata($resourceClass, $property);
+            } else {
+                [$type] = $this->getMetadata($resourceClass, $property);
+            }
 
             if (!$type) {
                 continue;
