@@ -24,7 +24,9 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Support\Collection;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\TypeIdentifier;
 
 /**
  * Uses Eloquent metadata to populate the identifier property.
@@ -72,18 +74,43 @@ final class EloquentPropertyMetadataFactory implements PropertyMetadataFactoryIn
                 continue;
             }
 
-            // see https://laravel.com/docs/11.x/eloquent-mutators#attribute-casting
+            // BC layer for api-platform/metadata < 4.1
+            if (method_exists(ApiProperty::class, 'getPhpType')) {
+                // see https://laravel.com/docs/11.x/eloquent-mutators#attribute-casting
+                $builtinType = $p['cast'] ?? $p['type'];
+                $type = match ($builtinType) {
+                    'integer' => Type::int(),
+                    'double', 'real' => Type::float(),
+                    'boolean', 'bool' => Type::bool(),
+                    'datetime', 'date', 'timestamp' => Type::object(\DateTime::class),
+                    'immutable_datetime', 'immutable_date' => Type::object(\DateTimeImmutable::class),
+                    'collection', 'encrypted:collection' => Type::collection(Type::object(Collection::class)),
+                    'encrypted:array' => Type::builtin(TypeIdentifier::ARRAY),
+                    'encrypted:object' => Type::object(),
+                    default => \in_array($builtinType, TypeIdentifier::values(), true) ? Type::builtin($builtinType) : Type::string(),
+                };
+
+                if ($p['nullable']) {
+                    $type = Type::nullable($type);
+                }
+
+                return $propertyMetadata
+                    ->withPhpType($type)
+                    ->withWritable($propertyMetadata->isWritable() ?? true === $p['fillable'])
+                    ->withReadable($propertyMetadata->isReadable() ?? false === $p['hidden']);
+            }
+
             $builtinType = $p['cast'] ?? $p['type'];
             $type = match ($builtinType) {
-                'integer' => new Type(Type::BUILTIN_TYPE_INT, $p['nullable']),
-                'double', 'real' => new Type(Type::BUILTIN_TYPE_FLOAT, $p['nullable']),
-                'boolean', 'bool' => new Type(Type::BUILTIN_TYPE_BOOL, $p['nullable']),
-                'datetime', 'date', 'timestamp' => new Type(Type::BUILTIN_TYPE_OBJECT, $p['nullable'], \DateTime::class),
-                'immutable_datetime', 'immutable_date' => new Type(Type::BUILTIN_TYPE_OBJECT, $p['nullable'], \DateTimeImmutable::class),
-                'collection', 'encrypted:collection' => new Type(Type::BUILTIN_TYPE_ITERABLE, $p['nullable'], Collection::class, true),
-                'encrypted:array' => new Type(Type::BUILTIN_TYPE_ARRAY, $p['nullable']),
-                'encrypted:object' => new Type(Type::BUILTIN_TYPE_OBJECT, $p['nullable']),
-                default => new Type(\in_array($builtinType, Type::$builtinTypes, true) ? $builtinType : Type::BUILTIN_TYPE_STRING, $p['nullable'] ?? true),
+                'integer' => new LegacyType(LegacyType::BUILTIN_TYPE_INT, $p['nullable']),
+                'double', 'real' => new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT, $p['nullable']),
+                'boolean', 'bool' => new LegacyType(LegacyType::BUILTIN_TYPE_BOOL, $p['nullable']),
+                'datetime', 'date', 'timestamp' => new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, $p['nullable'], \DateTime::class),
+                'immutable_datetime', 'immutable_date' => new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, $p['nullable'], \DateTimeImmutable::class),
+                'collection', 'encrypted:collection' => new LegacyType(LegacyType::BUILTIN_TYPE_ITERABLE, $p['nullable'], Collection::class, true),
+                'encrypted:array' => new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, $p['nullable']),
+                'encrypted:object' => new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, $p['nullable']),
+                default => new LegacyType(\in_array($builtinType, Type::$builtinTypes, true) ? $builtinType : LegacyType::BUILTIN_TYPE_STRING, $p['nullable'] ?? true),
             };
 
             return $propertyMetadata
@@ -106,7 +133,21 @@ final class EloquentPropertyMetadataFactory implements PropertyMetadataFactoryIn
                 default => false,
             };
 
-            $type = new Type($collection ? Type::BUILTIN_TYPE_ITERABLE : Type::BUILTIN_TYPE_OBJECT, false, $relation['related'], $collection, collectionValueType: new Type(Type::BUILTIN_TYPE_OBJECT, false, $relation['related']));
+            // BC layer for api-platform/metadata < 4.1
+            if (method_exists(ApiProperty::class, 'getPhpType')) {
+                $type = Type::object($relation['related']);
+                if ($collection) {
+                    $type = Type::iterable($type);
+                }
+
+                return $propertyMetadata
+                    ->withPhpType($type)
+                    ->withWritable($propertyMetadata->isWritable() ?? true)
+                    ->withReadable($propertyMetadata->isReadable() ?? true)
+                    ->withExtraProperties(['eloquent_relation' => $relation] + $propertyMetadata->getExtraProperties());
+            }
+
+            $type = new LegacyType($collection ? LegacyType::BUILTIN_TYPE_ITERABLE : LegacyType::BUILTIN_TYPE_OBJECT, false, $relation['related'], $collection, collectionValueType: new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, $relation['related']));
 
             return $propertyMetadata
                 ->withBuiltinTypes([$type])
