@@ -24,7 +24,8 @@ use ApiPlatform\Metadata\Tests\Extractor\Adapter\YamlPropertyAdapter;
 use ApiPlatform\Metadata\Tests\Fixtures\ApiResource\Comment;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
 
 /**
  * Ensures XML and YAML mappings are fully compatible with ApiPlatform\Metadata\ApiProperty.
@@ -77,9 +78,11 @@ final class PropertyMetadataCompatibilityTest extends TestCase
         'uriTemplate' => '/sub-resource-get-collection',
         'property' => 'test',
         'hydra' => false,
+        'phpType' => 'string',
     ];
 
     #[\PHPUnit\Framework\Attributes\DataProvider('getExtractors')]
+    #[\PHPUnit\Framework\Attributes\IgnoreDeprecations()]
     public function testValidMetadata(string $extractorClass, PropertyAdapterInterface $adapter): void
     {
         $reflClass = new \ReflectionClass(ApiProperty::class);
@@ -114,6 +117,12 @@ final class PropertyMetadataCompatibilityTest extends TestCase
             }
 
             if (method_exists($property, 'with'.ucfirst($parameter))) {
+                if ('builtinTypes' === $parameter && null !== $value) {
+                    $value = array_map(fn (string $builtinType): LegacyType => new LegacyType($builtinType), $value);
+                } elseif ('phpType' === $parameter && \is_string($value)) {
+                    $value = Type::builtin($value);
+                }
+
                 $property = $property->{'with'.ucfirst($parameter)}($value, self::FIXTURES);
                 continue;
             }
@@ -122,10 +131,5 @@ final class PropertyMetadataCompatibilityTest extends TestCase
         }
 
         return $property;
-    }
-
-    private function withBuiltinTypes(array $values, array $fixtures): array
-    {
-        return array_map(fn (string $builtinType): Type => new Type($builtinType), $values);
     }
 }

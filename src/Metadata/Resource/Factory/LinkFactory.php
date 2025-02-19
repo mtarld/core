@@ -19,7 +19,11 @@ use ApiPlatform\Metadata\Metadata;
 use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use ApiPlatform\Metadata\Property\Factory\PropertyNameCollectionFactoryInterface;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 
 /**
  * @internal
@@ -41,7 +45,7 @@ final class LinkFactory implements LinkFactoryInterface, PropertyLinkFactoryInte
     public function createLinkFromProperty(Metadata $operation, string $property): Link
     {
         $metadata = $this->propertyMetadataFactory->create($resourceClass = $operation->getClass(), $property);
-        $relationClass = $this->getPropertyClassType($metadata->getBuiltinTypes());
+        $relationClass = $this->getPropertyClassType($metadata->getPhpType());
         if (!$relationClass) {
             throw new RuntimeException(\sprintf('We could not find a class matching the uriVariable "%s" on "%s".', $property, $resourceClass));
         }
@@ -85,7 +89,7 @@ final class LinkFactory implements LinkFactoryInterface, PropertyLinkFactoryInte
         foreach ($this->propertyNameCollectionFactory->create($resourceClass = $operation->getClass()) as $property) {
             $metadata = $this->propertyMetadataFactory->create($resourceClass, $property);
 
-            if (!($relationClass = $this->getPropertyClassType($metadata->getBuiltinTypes())) || !$this->resourceClassResolver->isResourceClass($relationClass)) {
+            if (!($relationClass = $this->getPropertyClassType($metadata->getPhpType())) || !$this->resourceClassResolver->isResourceClass($relationClass)) {
                 continue;
             }
 
@@ -115,7 +119,7 @@ final class LinkFactory implements LinkFactoryInterface, PropertyLinkFactoryInte
                         ->withFromProperty($property);
 
                     if (!$attributeLink->getFromClass()) {
-                        $attributeLink = $attributeLink->withFromClass($resourceClass)->withToClass($this->getPropertyClassType($metadata->getBuiltinTypes()) ?? $resourceClass);
+                        $attributeLink = $attributeLink->withFromClass($resourceClass)->withToClass($this->getPropertyClassType($metadata->getPhpType()) ?? $resourceClass);
                     }
 
                     $links[] = $attributeLink;
@@ -179,18 +183,26 @@ final class LinkFactory implements LinkFactoryInterface, PropertyLinkFactoryInte
         return $this->localIdentifiersPerResourceClassCache[$resourceClass] = $identifiers;
     }
 
-    /**
-     * @param Type[]|null $types
-     */
-    private function getPropertyClassType(?array $types): ?string
+    private function getPropertyClassType(?Type $type): ?string
     {
-        foreach ($types ?? [] as $type) {
-            if ($type->isCollection()) {
-                return $this->getPropertyClassType($type->getCollectionValueTypes());
+        if (!$type) {
+            return null;
+        }
+
+        /** @var class-string|null $className */
+        $className = null;
+
+        foreach ($type instanceof CompositeTypeInterface ? $type->getTypes() : [$type] as $type) {
+            if ($type instanceof CollectionType) {
+                return $this->getPropertyClassType($type->getCollectionValueType());
             }
 
-            if ($class = $type->getClassName()) {
-                return $class;
+            while ($type instanceof WrappingTypeInterface) {
+                $type = $type->getWrappedType();
+            }
+
+            if ($type instanceof ObjectType) {
+                return $type->getClassName();
             }
         }
 

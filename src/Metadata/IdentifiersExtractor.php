@@ -23,6 +23,8 @@ use ApiPlatform\Metadata\Util\ResourceClassInfoTrait;
 use Symfony\Component\PropertyAccess\Exception\NoSuchPropertyException;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
 
 /**
  * {@inheritdoc}
@@ -110,22 +112,20 @@ final class IdentifiersExtractor implements IdentifiersExtractorInterface
         foreach ($this->propertyNameCollectionFactory->create($resourceClass) as $propertyName) {
             $propertyMetadata = $this->propertyMetadataFactory->create($resourceClass, $propertyName);
 
-            $types = $propertyMetadata->getBuiltinTypes();
-            if (null === ($type = $types[0] ?? null)) {
+            $type = $propertyMetadata->getPhpType();
+            if (null === $type) {
                 continue;
             }
 
             try {
-                if ($type->isCollection()) {
-                    $collectionValueType = $type->getCollectionValueTypes()[0] ?? null;
-
-                    if (null !== $collectionValueType && $collectionValueType->getClassName() === $class) {
+                foreach ($type instanceof CompositeTypeInterface ? $type->getTypes() : [$type] as $t) {
+                    if ($t instanceof CollectionType && $t->getCollectionValueType()->isIdentifiedBy($class)) {
                         return $this->resolveIdentifierValue($this->propertyAccessor->getValue($item, \sprintf('%s[0].%s', $propertyName, $property)), $parameterName);
                     }
-                }
 
-                if ($type->getClassName() === $class) {
-                    return $this->resolveIdentifierValue($this->propertyAccessor->getValue($item, "$propertyName.$property"), $parameterName);
+                    if ($t->isIdentifiedBy($class)) {
+                        return $this->resolveIdentifierValue($this->propertyAccessor->getValue($item, "$propertyName.$property"), $parameterName);
+                    }
                 }
             } catch (NoSuchPropertyException $e) {
                 throw new RuntimeException('Not able to retrieve identifiers.', $e->getCode(), $e);
