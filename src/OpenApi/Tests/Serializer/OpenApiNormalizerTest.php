@@ -42,6 +42,7 @@ use ApiPlatform\OpenApi\Model\Server;
 use ApiPlatform\OpenApi\OpenApi;
 use ApiPlatform\OpenApi\Options;
 use ApiPlatform\OpenApi\Serializer\OpenApiNormalizer;
+use ApiPlatform\OpenApi\Tests\ApiPropertyTypeLegacyTrait;
 use ApiPlatform\OpenApi\Tests\Fixtures\Dummy;
 use ApiPlatform\State\ApiResource\Error;
 use ApiPlatform\State\Pagination\PaginationOptions;
@@ -50,14 +51,16 @@ use PHPUnit\Framework\TestCase;
 use Prophecy\Argument;
 use Prophecy\PhpUnit\ProphecyTrait;
 use Psr\Container\ContainerInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\TypeInfo\Type;
 
 class OpenApiNormalizerTest extends TestCase
 {
     use ProphecyTrait;
+    use ApiPropertyTypeLegacyTrait;
 
     private const OPERATION_FORMATS = [
         'input_formats' => ['jsonld' => ['application/ld+json']],
@@ -146,19 +149,30 @@ class OpenApiNormalizerTest extends TestCase
         $resourceCollectionMetadataFactoryProphecy->create(Error::class)->shouldBeCalled()->willReturn(new ResourceMetadataCollection(Error::class, []));
         $resourceCollectionMetadataFactoryProphecy->create(ValidationException::class)->shouldBeCalled()->willReturn(new ResourceMetadataCollection(ValidationException::class, []));
 
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $intType = Type::int();
+            $stringType = Type::string();
+            $nullableDateTimeType = Type::nullable(Type::object(\DateTime::class));
+        } else {
+            $intType = [new LegacyType(LegacyType::BUILTIN_TYPE_INT)];
+            $stringType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+            $nullableDateTimeType = [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, true, \DateTime::class)];
+        }
+
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'id', Argument::any())->shouldBeCalled()->willReturn(
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'id', Argument::any())->shouldBeCalled()->willReturn($this->apiPropertyWithPhpOrBuiltinType(
+            $intType,
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)])
                 ->withDescription('This is an id.')
                 ->withReadable(true)
                 ->withWritable(false)
                 ->withIdentifier(true)
                 ->withSchema(['type' => 'integer', 'description' => 'This is an id.', 'readOnly' => true])
-        );
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'name', Argument::any())->shouldBeCalled()->willReturn(
+        ));
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'name', Argument::any())->shouldBeCalled()->willReturn($this->apiPropertyWithPhpOrBuiltinType(
+            $stringType,
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
                 ->withDescription('This is a name.')
                 ->withReadable(true)
                 ->withWritable(true)
@@ -167,10 +181,10 @@ class OpenApiNormalizerTest extends TestCase
                 ->withRequired(false)
                 ->withIdentifier(false)
                 ->withSchema(['type' => 'string', 'description' => 'This is a name.', 'minLength' => 3, 'maxLength' => 20, 'pattern' => '^dummyPattern$'])
-        );
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'description', Argument::any())->shouldBeCalled()->willReturn(
+        ));
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'description', Argument::any())->shouldBeCalled()->willReturn($this->apiPropertyWithPhpOrBuiltinType(
+            $stringType,
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
                 ->withDescription('This is an initializable but not writable property.')
                 ->withReadable(true)
                 ->withWritable(false)
@@ -179,10 +193,10 @@ class OpenApiNormalizerTest extends TestCase
                 ->withRequired(false)
                 ->withIdentifier(false)
                 ->withSchema(['type' => 'string', 'readOnly' => true, 'description' => 'This is an initializable but not writable property.'])
-        );
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'dummyDate', Argument::any())->shouldBeCalled()->willReturn(
+        ));
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'dummyDate', Argument::any())->shouldBeCalled()->willReturn($this->apiPropertyWithPhpOrBuiltinType(
+            $nullableDateTimeType,
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, true, \DateTime::class)])
                 ->withDescription('This is a \DateTimeInterface object.')
                 ->withReadable(true)
                 ->withWritable(true)
@@ -191,17 +205,17 @@ class OpenApiNormalizerTest extends TestCase
                 ->withRequired(false)
                 ->withIdentifier(false)
                 ->withSchema(['type' => 'string', 'format' => 'date-time', 'description' => 'This is a \DateTimeInterface object.'])
-        );
+        ));
 
-        $propertyMetadataFactoryProphecy->create('Zorro', 'id', Argument::any())->shouldBeCalled()->willReturn(
+        $propertyMetadataFactoryProphecy->create('Zorro', 'id', Argument::any())->shouldBeCalled()->willReturn($this->apiPropertyWithPhpOrBuiltinType(
+            $intType,
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)])
                 ->withDescription('This is an id.')
                 ->withReadable(true)
                 ->withWritable(false)
                 ->withIdentifier(true)
                 ->withSchema(['type' => 'integer', 'description' => 'This is an id.', 'readOnly' => true])
-        );
+        ));
 
         $filterLocatorProphecy = $this->prophesize(ContainerInterface::class);
         $resourceMetadataFactory = $resourceCollectionMetadataFactoryProphecy->reveal();
