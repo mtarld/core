@@ -30,7 +30,10 @@ use GraphQL\Type\Definition\NonNull;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type as GraphQLType;
 use Psr\Container\ContainerInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType as SymfonyCollectionType;
+use Symfony\Component\TypeInfo\Type\ObjectType as SymfonyObjectType;
 
 /**
  * Builds the GraphQL types.
@@ -223,9 +226,23 @@ final class TypeBuilder implements ContextAwareTypeBuilderInterface
     /**
      * {@inheritdoc}
      */
-    public function isCollection(Type $type): bool
+    public function isCollection(LegacyType $type): bool
     {
+        trigger_deprecation('api-platform/graphql', '4.1', 'The "%s()" method is deprecated, use "%s::isObjectCollection()" instead.', __METHOD__, self::class);
+
         return $type->isCollection() && ($collectionValueType = $type->getCollectionValueTypes()[0] ?? null) && null !== $collectionValueType->getClassName();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function isObjectCollection(Type $type): bool
+    {
+        if (!$type instanceof SymfonyCollectionType) {
+            return false;
+        }
+
+        return $type->getCollectionValueType()->isSatisfiedBy(static fn (Type $t): bool => $t instanceof SymfonyObjectType);
     }
 
     private function getCursorBasedPaginationFields(GraphQLType $resourceType): array

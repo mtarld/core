@@ -23,6 +23,7 @@ use ApiPlatform\State\Pagination\ArrayPaginator;
 use ApiPlatform\State\ProcessorInterface;
 use ApiPlatform\State\ProviderInterface;
 use GraphQL\Type\Definition\ResolveInfo;
+use Symfony\Component\TypeInfo\Type\CollectionType;
 
 class ResolverFactory implements ResolverFactoryInterface
 {
@@ -51,9 +52,18 @@ class ResolverFactory implements ResolverFactoryInterface
                 }
 
                 $propertyMetadata = $rootClass ? $propertyMetadataFactory?->create($rootClass, $info->fieldName) : null;
-                $type = $propertyMetadata?->getBuiltinTypes()[0] ?? null;
+
+                // BC layer for api-platform/metadata < 4.1
+                if (method_exists($propertyMetadata, 'getPhpType')) {
+                    $type = $propertyMetadata->getPhpType();
+                    $typeIsCollection = $type instanceof CollectionType;
+                } else {
+                    $type = $propertyMetadata?->getBuiltinTypes()[0] ?? null;
+                    $typeIsCollection = $type?->isCollection();
+                }
+
                 // Data already fetched and normalized (field or nested resource)
-                if ($body || null === $resourceClass || ($type && !$type->isCollection())) {
+                if ($body || null === $resourceClass || ($type && $typeIsCollection)) {
                     return $body;
                 }
             }
