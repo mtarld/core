@@ -15,6 +15,7 @@ namespace ApiPlatform\JsonApi\Tests\Serializer;
 
 use ApiPlatform\JsonApi\Serializer\ItemNormalizer;
 use ApiPlatform\JsonApi\Serializer\ReservedAttributeNameConverter;
+use ApiPlatform\JsonApi\Tests\ApiPropertyTypeLegacyTrait;
 use ApiPlatform\JsonApi\Tests\Fixtures\CircularReference;
 use ApiPlatform\JsonApi\Tests\Fixtures\Dummy;
 use ApiPlatform\JsonApi\Tests\Fixtures\RelatedDummy;
@@ -35,13 +36,14 @@ use Prophecy\Argument;
 use Prophecy\PhpUnit\ProphecyTrait;
 use Symfony\Component\PropertyAccess\Exception\NoSuchPropertyException;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
 use Symfony\Component\Serializer\NameConverter\AdvancedNameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\TypeInfo\Type;
 
 /**
  * @author Amrouche Hamza <hamza.simperfit@gmail.com>
@@ -49,6 +51,7 @@ use Symfony\Component\Serializer\SerializerInterface;
 class ItemNormalizerTest extends TestCase
 {
     use ProphecyTrait;
+    use ApiPropertyTypeLegacyTrait;
 
     public function testNormalize(): void
     {
@@ -259,14 +262,22 @@ class ItemNormalizerTest extends TestCase
         $propertyNameCollectionFactoryProphecy = $this->prophesize(PropertyNameCollectionFactoryInterface::class);
         $propertyNameCollectionFactoryProphecy->create(Dummy::class, Argument::any())->willReturn(new PropertyNameCollection(['name', 'ghost', 'relatedDummy', 'relatedDummies']));
 
-        $relatedDummyType = new Type(Type::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class);
-        $relatedDummiesType = new Type(Type::BUILTIN_TYPE_OBJECT, false, ArrayCollection::class, true, new Type(Type::BUILTIN_TYPE_INT), $relatedDummyType);
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $stringType = Type::string();
+            $relatedDummyType = Type::object(RelatedDummy::class);
+            $relatedDummiesType = Type::collection(Type::object(ArrayCollection::class), Type::object(RelatedDummy::class), Type::int());
+        } else {
+            $stringType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+            $relatedDummyType = new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class);
+            $relatedDummiesType = new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ArrayCollection::class, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), $relatedDummyType);
+        }
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'name', Argument::any())->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('')->withReadable(false)->withWritable(true));
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'ghost', Argument::any())->willReturn((new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])->withDescription('')->withReadable(false)->withWritable(true));
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy', Argument::any())->willReturn((new ApiProperty())->withBuiltinTypes([$relatedDummyType])->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false));
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummies', Argument::any())->willReturn((new ApiProperty())->withBuiltinTypes([$relatedDummiesType])->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false));
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'name', Argument::any())->willReturn($this->apiPropertyWithPhpOrBuiltinType($stringType)->withDescription('')->withReadable(false)->withWritable(true));
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'ghost', Argument::any())->willReturn($this->apiPropertyWithPhpOrBuiltinType($stringType)->withDescription('')->withReadable(false)->withWritable(true));
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy', Argument::any())->willReturn($this->apiPropertyWithPhpOrBuiltinType($relatedDummyType)->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false));
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummies', Argument::any())->willReturn($this->apiPropertyWithPhpOrBuiltinType($relatedDummiesType)->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false));
 
         $getItemFromIriSecondArgCallback = fn ($arg): bool => \is_array($arg) && isset($arg['fetch_data']) && true === $arg['fetch_data'];
 
@@ -363,11 +374,17 @@ class ItemNormalizerTest extends TestCase
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
 
-        $type = new Type(Type::BUILTIN_TYPE_OBJECT, false, ArrayCollection::class, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class));
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummies', [])->willReturn((new ApiProperty())
-                ->withBuiltinTypes([$type])
-                ->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false)
-        );
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $type = Type::collection(Type::object(ArrayCollection::class), Type::object(RelatedDummy::class), Type::int());
+        } else {
+            $type = [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ArrayCollection::class, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class))];
+        }
+
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummies', [])->willReturn($this->apiPropertyWithPhpOrBuiltinType(
+            $type,
+            (new ApiProperty())->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false)
+        ));
 
         $iriConverterProphecy = $this->prophesize(IriConverterInterface::class);
 
@@ -418,10 +435,18 @@ class ItemNormalizerTest extends TestCase
         $propertyNameCollectionFactoryProphecy->create(Dummy::class, [])->willReturn(new PropertyNameCollection(['relatedDummies']));
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $type = new Type(Type::BUILTIN_TYPE_OBJECT, false, ArrayCollection::class, true, new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class));
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummies', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([$type])->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false)
-        );
+
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $type = Type::collection(Type::object(ArrayCollection::class), Type::object(RelatedDummy::class), Type::string());
+        } else {
+            $type = [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ArrayCollection::class, true, new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class))];
+        }
+
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummies', [])->willReturn($this->apiPropertyWithPhpOrBuiltinType(
+            $type,
+            (new ApiProperty())->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false)
+        ));
 
         $iriConverterProphecy = $this->prophesize(IriConverterInterface::class);
 
@@ -467,10 +492,18 @@ class ItemNormalizerTest extends TestCase
         $propertyNameCollectionFactoryProphecy->create(Dummy::class, [])->willReturn(new PropertyNameCollection(['relatedDummy']));
 
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class), ])->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false)
-        );
+
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $type = Type::object(RelatedDummy::class);
+        } else {
+            $type = [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RelatedDummy::class)];
+        }
+
+        $propertyMetadataFactoryProphecy->create(Dummy::class, 'relatedDummy', [])->willReturn($this->apiPropertyWithPhpOrBuiltinType(
+            $type,
+            (new ApiProperty())->withReadable(false)->withWritable(true)->withReadableLink(false)->withWritableLink(false)
+        ));
 
         $iriConverterProphecy = $this->prophesize(IriConverterInterface::class);
 

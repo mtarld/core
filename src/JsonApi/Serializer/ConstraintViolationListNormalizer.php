@@ -18,6 +18,8 @@ use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\ObjectType;
 
 /**
  * Converts {@see ConstraintViolationListInterface} to a JSON API error representation.
@@ -81,6 +83,16 @@ final class ConstraintViolationListNormalizer implements NormalizerInterface
 
         if (null !== $this->nameConverter) {
             $fieldName = $this->nameConverter->normalize($fieldName, $class, self::FORMAT);
+        }
+
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists($propertyMetadata, 'getPhpType')) {
+            $type = $propertyMetadata->getPhpType();
+            if ($type?->isSatisfiedBy(static fn (Type $t): bool => $t instanceof ObjectType)) {
+                return "data/relationships/$fieldName";
+            }
+
+            return "data/attributes/$fieldName";
         }
 
         $type = $propertyMetadata->getBuiltinTypes()[0] ?? null;
