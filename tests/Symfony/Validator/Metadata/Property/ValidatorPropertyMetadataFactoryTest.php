@@ -44,7 +44,8 @@ use ApiPlatform\Tests\Fixtures\DummyValidatedHostnameEntity;
 use ApiPlatform\Tests\Fixtures\DummyValidatedUlidEntity;
 use PHPUnit\Framework\TestCase;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\Validator\Constraints\Hostname;
 use Symfony\Component\Validator\Constraints\Ulid;
 use Symfony\Component\Validator\Mapping\ClassMetadata;
@@ -277,9 +278,17 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
 
         $decoratedPropertyMetadataFactory = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $property = 'dummy';
-        $decoratedPropertyMetadataFactory->create(DummyValidatedEntity::class, $property, [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
-        )->shouldBeCalled();
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $decoratedPropertyMetadataFactory->create(DummyValidatedEntity::class, $property, [])->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])
+            )->shouldBeCalled();
+        } else {
+            $decoratedPropertyMetadataFactory->create(DummyValidatedEntity::class, $property, [])->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())
+            )->shouldBeCalled();
+        }
 
         $lengthRestrictions = new PropertySchemaLengthRestriction();
         $validatorPropertyMetadataFactory = new ValidatorPropertyMetadataFactory(
@@ -372,9 +381,18 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
             ->shouldBeCalled();
 
         $decoratedPropertyMetadataFactory = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $decoratedPropertyMetadataFactory->create(DummySequentiallyValidatedEntity::class, 'dummy', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
-        )->shouldBeCalled();
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $decoratedPropertyMetadataFactory->create(DummySequentiallyValidatedEntity::class, 'dummy', [])->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])
+            )->shouldBeCalled();
+        } else {
+            $decoratedPropertyMetadataFactory->create(DummySequentiallyValidatedEntity::class, 'dummy', [])->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())
+            )->shouldBeCalled();
+        }
+
         $validationPropertyMetadataFactory = new ValidatorPropertyMetadataFactory(
             $validatorMetadataFactory->reveal(),
             $decoratedPropertyMetadataFactory->reveal(),
@@ -399,9 +417,18 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
             ->shouldBeCalled();
 
         $decoratedPropertyMetadataFactory = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $decoratedPropertyMetadataFactory->create(DummyCompoundValidatedEntity::class, 'dummy', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
-        )->shouldBeCalled();
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $decoratedPropertyMetadataFactory->create(DummyCompoundValidatedEntity::class, 'dummy', [])->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])
+            )->shouldBeCalled();
+        } else {
+            $decoratedPropertyMetadataFactory->create(DummyCompoundValidatedEntity::class, 'dummy', [])->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())
+            )->shouldBeCalled();
+        }
+
         $validationPropertyMetadataFactory = new ValidatorPropertyMetadataFactory(
             $validatorMetadataFactory->reveal(),
             $decoratedPropertyMetadataFactory->reveal(),
@@ -426,9 +453,17 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
             ->shouldBeCalled();
 
         $decoratedPropertyMetadataFactory = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $decoratedPropertyMetadataFactory->create(DummyAtLeastOneOfValidatedEntity::class, 'dummy', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
-        )->shouldBeCalled();
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $decoratedPropertyMetadataFactory->create(DummyAtLeastOneOfValidatedEntity::class, 'dummy', [])->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])
+            )->shouldBeCalled();
+        } else {
+            $decoratedPropertyMetadataFactory->create(DummyAtLeastOneOfValidatedEntity::class, 'dummy', [])->willReturn(
+                (new ApiProperty())->withPhpType(Type::string())
+            )->shouldBeCalled();
+        }
         $restrictionsMetadata = [new PropertySchemaLengthRestriction(), new PropertySchemaRegexRestriction()];
         $restrictionsMetadata = [new PropertySchemaOneOfRestriction($restrictionsMetadata), new PropertySchemaLengthRestriction(), new PropertySchemaRegexRestriction()];
         $validationPropertyMetadataFactory = new ValidatorPropertyMetadataFactory(
@@ -484,9 +519,18 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
             ->shouldBeCalled();
 
         $decoratedPropertyMetadataFactory = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $decoratedPropertyMetadataFactory->create(DummyRangeValidatedEntity::class, $property, [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([$type])
-        )->shouldBeCalled();
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $decoratedPropertyMetadataFactory->create(DummyRangeValidatedEntity::class, $property, [])->willReturn(
+                (new ApiProperty())->withBuiltinTypes([$type])
+            )->shouldBeCalled();
+        } else {
+            $decoratedPropertyMetadataFactory->create(DummyRangeValidatedEntity::class, $property, [])->willReturn(
+                (new ApiProperty())->withPhpType($type)
+            )->shouldBeCalled();
+        }
+
         $validationPropertyMetadataFactory = new ValidatorPropertyMetadataFactory(
             $validatorMetadataFactory->reveal(),
             $decoratedPropertyMetadataFactory->reveal(),
@@ -499,12 +543,22 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
 
     public static function provideRangeConstraintCases(): \Generator
     {
-        yield 'min int' => ['type' => new Type(Type::BUILTIN_TYPE_INT), 'property' => 'dummyIntMin', 'expectedSchema' => ['minimum' => 1]];
-        yield 'max int' => ['type' => new Type(Type::BUILTIN_TYPE_INT), 'property' => 'dummyIntMax', 'expectedSchema' => ['maximum' => 10]];
-        yield 'min/max int' => ['type' => new Type(Type::BUILTIN_TYPE_INT), 'property' => 'dummyIntMinMax', 'expectedSchema' => ['minimum' => 1, 'maximum' => 10]];
-        yield 'min float' => ['type' => new Type(Type::BUILTIN_TYPE_FLOAT), 'property' => 'dummyFloatMin', 'expectedSchema' => ['minimum' => 1.5]];
-        yield 'max float' => ['type' => new Type(Type::BUILTIN_TYPE_FLOAT), 'property' => 'dummyFloatMax', 'expectedSchema' => ['maximum' => 10.5]];
-        yield 'min/max float' => ['type' => new Type(Type::BUILTIN_TYPE_FLOAT), 'property' => 'dummyFloatMinMax', 'expectedSchema' => ['minimum' => 1.5, 'maximum' => 10.5]];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            yield 'min int' => ['type' => new LegacyType(LegacyType::BUILTIN_TYPE_INT), 'property' => 'dummyIntMin', 'expectedSchema' => ['minimum' => 1]];
+            yield 'max int' => ['type' => new LegacyType(LegacyType::BUILTIN_TYPE_INT), 'property' => 'dummyIntMax', 'expectedSchema' => ['maximum' => 10]];
+            yield 'min/max int' => ['type' => new LegacyType(LegacyType::BUILTIN_TYPE_INT), 'property' => 'dummyIntMinMax', 'expectedSchema' => ['minimum' => 1, 'maximum' => 10]];
+            yield 'min float' => ['type' => new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT), 'property' => 'dummyFloatMin', 'expectedSchema' => ['minimum' => 1.5]];
+            yield 'max float' => ['type' => new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT), 'property' => 'dummyFloatMax', 'expectedSchema' => ['maximum' => 10.5]];
+            yield 'min/max float' => ['type' => new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT), 'property' => 'dummyFloatMinMax', 'expectedSchema' => ['minimum' => 1.5, 'maximum' => 10.5]];
+        } else {
+            yield 'min int' => ['type' => Type::int(), 'property' => 'dummyIntMin', 'expectedSchema' => ['minimum' => 1]];
+            yield 'max int' => ['type' => Type::int(), 'property' => 'dummyIntMax', 'expectedSchema' => ['maximum' => 10]];
+            yield 'min/max int' => ['type' => Type::int(), 'property' => 'dummyIntMinMax', 'expectedSchema' => ['minimum' => 1, 'maximum' => 10]];
+            yield 'min float' => ['type' => Type::float(), 'property' => 'dummyFloatMin', 'expectedSchema' => ['minimum' => 1.5]];
+            yield 'max float' => ['type' => Type::float(), 'property' => 'dummyFloatMax', 'expectedSchema' => ['maximum' => 10.5]];
+            yield 'min/max float' => ['type' => Type::float(), 'property' => 'dummyFloatMinMax', 'expectedSchema' => ['minimum' => 1.5, 'maximum' => 10.5]];
+        }
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('provideChoiceConstraintCases')]
@@ -536,13 +590,24 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
 
     public static function provideChoiceConstraintCases(): \Generator
     {
-        yield 'single choice' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), 'property' => 'dummySingleChoice', 'expectedSchema' => ['enum' => ['a', 'b']]];
-        yield 'single choice callback' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), 'property' => 'dummySingleChoiceCallback', 'expectedSchema' => ['enum' => ['a', 'b', 'c', 'd']]];
-        yield 'multi choice' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoice', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b']]]];
-        yield 'multi choice callback' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoiceCallback', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']]]];
-        yield 'multi choice min' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoiceMin', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'minItems' => 2]];
-        yield 'multi choice max' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoiceMax', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'maxItems' => 4]];
-        yield 'multi choice min/max' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoiceMinMax', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'minItems' => 2, 'maxItems' => 4]];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            yield 'single choice' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]), 'property' => 'dummySingleChoice', 'expectedSchema' => ['enum' => ['a', 'b']]];
+            yield 'single choice callback' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]), 'property' => 'dummySingleChoiceCallback', 'expectedSchema' => ['enum' => ['a', 'b', 'c', 'd']]];
+            yield 'multi choice' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoice', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b']]]];
+            yield 'multi choice callback' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoiceCallback', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']]]];
+            yield 'multi choice min' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoiceMin', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'minItems' => 2]];
+            yield 'multi choice max' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoiceMax', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'maxItems' => 4]];
+            yield 'multi choice min/max' => ['propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]), 'property' => 'dummyMultiChoiceMinMax', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'minItems' => 2, 'maxItems' => 4]];
+        } else {
+            yield 'single choice' => ['propertyMetadata' => (new ApiProperty())->withPhpType(Type::string()), 'property' => 'dummySingleChoice', 'expectedSchema' => ['enum' => ['a', 'b']]];
+            yield 'single choice callback' => ['propertyMetadata' => (new ApiProperty())->withPhpType(Type::string()), 'property' => 'dummySingleChoiceCallback', 'expectedSchema' => ['enum' => ['a', 'b', 'c', 'd']]];
+            yield 'multi choice' => ['propertyMetadata' => (new ApiProperty())->withPhpType(Type::string()), 'property' => 'dummyMultiChoice', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b']]]];
+            yield 'multi choice callback' => ['propertyMetadata' => (new ApiProperty())->withPhpType(Type::string()), 'property' => 'dummyMultiChoiceCallback', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']]]];
+            yield 'multi choice min' => ['propertyMetadata' => (new ApiProperty())->withPhpType(Type::string()), 'property' => 'dummyMultiChoiceMin', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'minItems' => 2]];
+            yield 'multi choice max' => ['propertyMetadata' => (new ApiProperty())->withPhpType(Type::string()), 'property' => 'dummyMultiChoiceMax', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'maxItems' => 4]];
+            yield 'multi choice min/max' => ['propertyMetadata' => (new ApiProperty())->withPhpType(Type::string()), 'property' => 'dummyMultiChoiceMinMax', 'expectedSchema' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b', 'c', 'd']], 'minItems' => 2, 'maxItems' => 4]];
+        }
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('provideCountConstraintCases')]
@@ -590,9 +655,17 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
             ->shouldBeCalled();
 
         $decoratedPropertyMetadataFactory = $this->prophesize(PropertyMetadataFactoryInterface::class);
-        $decoratedPropertyMetadataFactory->create(DummyCollectionValidatedEntity::class, 'dummyData', [])->willReturn(
-            (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_ARRAY)])
-        )->shouldBeCalled();
+
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            $decoratedPropertyMetadataFactory->create(DummyCollectionValidatedEntity::class, 'dummyData', [])->willReturn(
+                (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY)])
+            )->shouldBeCalled();
+        } else {
+            $decoratedPropertyMetadataFactory->create(DummyCollectionValidatedEntity::class, 'dummyData', [])->willReturn(
+                (new ApiProperty())->withPhpType(Type::array())
+            )->shouldBeCalled();
+        }
 
         $greaterThanRestriction = new PropertySchemaGreaterThanRestriction();
         $lengthRestriction = new PropertySchemaLengthRestriction();
@@ -682,53 +755,90 @@ class ValidatorPropertyMetadataFactoryTest extends TestCase
 
     public static function provideNumericConstraintCases(): \Generator
     {
-        yield [
-            'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]),
-            'property' => 'greaterThanMe',
-            'expectedSchema' => ['exclusiveMinimum' => 10],
-        ];
-
-        yield [
-            'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_FLOAT)]),
-            'property' => 'greaterThanOrEqualToMe',
-            'expectedSchema' => ['minimum' => 10.99],
-        ];
-
-        yield [
-            'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]),
-            'property' => 'lessThanMe',
-            'expectedSchema' => ['exclusiveMaximum' => 99],
-        ];
-
-        yield [
-            'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_FLOAT)]),
-            'property' => 'lessThanOrEqualToMe',
-            'expectedSchema' => ['maximum' => 99.33],
-        ];
-
-        yield [
-            'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]),
-            'property' => 'positive',
-            'expectedSchema' => ['exclusiveMinimum' => 0],
-        ];
-
-        yield [
-            'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]),
-            'property' => 'positiveOrZero',
-            'expectedSchema' => ['minimum' => 0],
-        ];
-
-        yield [
-            'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]),
-            'property' => 'negative',
-            'expectedSchema' => ['exclusiveMaximum' => 0],
-        ];
-
-        yield [
-            'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]),
-            'property' => 'negativeOrZero',
-            'expectedSchema' => ['maximum' => 0],
-        ];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]),
+                'property' => 'greaterThanMe',
+                'expectedSchema' => ['exclusiveMinimum' => 10],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]),
+                'property' => 'greaterThanOrEqualToMe',
+                'expectedSchema' => ['minimum' => 10.99],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]),
+                'property' => 'lessThanMe',
+                'expectedSchema' => ['exclusiveMaximum' => 99],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]),
+                'property' => 'lessThanOrEqualToMe',
+                'expectedSchema' => ['maximum' => 99.33],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]),
+                'property' => 'positive',
+                'expectedSchema' => ['exclusiveMinimum' => 0],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]),
+                'property' => 'positiveOrZero',
+                'expectedSchema' => ['minimum' => 0],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]),
+                'property' => 'negative',
+                'expectedSchema' => ['exclusiveMaximum' => 0],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_INT)]),
+                'property' => 'negativeOrZero',
+                'expectedSchema' => ['maximum' => 0],
+            ];
+        } else {
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withPhpType(Type::int()),
+                'property' => 'greaterThanMe',
+                'expectedSchema' => ['exclusiveMinimum' => 10],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withPhpType(Type::float()),
+                'property' => 'greaterThanOrEqualToMe',
+                'expectedSchema' => ['minimum' => 10.99],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withPhpType(Type::int()),
+                'property' => 'lessThanMe',
+                'expectedSchema' => ['exclusiveMaximum' => 99],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withPhpType(Type::float()),
+                'property' => 'lessThanOrEqualToMe',
+                'expectedSchema' => ['maximum' => 99.33],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withPhpType(Type::int()),
+                'property' => 'positive',
+                'expectedSchema' => ['exclusiveMinimum' => 0],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withPhpType(Type::int()),
+                'property' => 'positiveOrZero',
+                'expectedSchema' => ['minimum' => 0],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withPhpType(Type::int()),
+                'property' => 'negative',
+                'expectedSchema' => ['exclusiveMaximum' => 0],
+            ];
+            yield [
+                'propertyMetadata' => (new ApiProperty())->withPhpType(Type::int()),
+                'property' => 'negativeOrZero',
+                'expectedSchema' => ['maximum' => 0],
+            ];
+        }
     }
 
     public function testCallableGroup(): void

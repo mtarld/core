@@ -19,7 +19,8 @@ use ApiPlatform\Symfony\Validator\Metadata\Property\Restriction\PropertySchemaOn
 use ApiPlatform\Symfony\Validator\Metadata\Property\Restriction\PropertySchemaRegexRestriction;
 use PHPUnit\Framework\TestCase;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\AtLeastOneOf;
 use Symfony\Component\Validator\Constraints\Length;
@@ -70,8 +71,15 @@ final class PropertySchemaOneOfRestrictionTest extends TestCase
 
         yield 'not supported constraints' => [new AtLeastOneOf(['constraints' => [new Positive(), new Length(['min' => 3])]]), new ApiProperty(), []];
 
-        yield 'one supported constraint' => [new AtLeastOneOf(['constraints' => [new Positive(), new Length(['min' => 3])]]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), [
-            'oneOf' => [['minLength' => 3]],
-        ]];
+        // BC layer for api-platform/metadata < 4.1
+        if (!method_exists(ApiProperty::class, 'getPhpType')) {
+            yield 'one supported constraint' => [new AtLeastOneOf(['constraints' => [new Positive(), new Length(['min' => 3])]]), (new ApiProperty())->withBuiltinTypes([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]), [
+                'oneOf' => [['minLength' => 3]],
+            ]];
+        } else {
+            yield 'one supported constraint' => [new AtLeastOneOf(['constraints' => [new Positive(), new Length(['min' => 3])]]), (new ApiProperty())->withPhpType(Type::string()), [
+                'oneOf' => [['minLength' => 3]],
+            ]];
+        }
     }
 }

@@ -15,9 +15,11 @@ namespace ApiPlatform\Tests\Symfony\Validator\Metadata\Property\Restriction;
 
 use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Symfony\Validator\Metadata\Property\Restriction\PropertySchemaChoiceRestriction;
+use ApiPlatform\Tests\ApiPropertyTypeLegacyTrait;
 use PHPUnit\Framework\TestCase;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Positive;
@@ -28,6 +30,7 @@ use Symfony\Component\Validator\Constraints\Positive;
 final class PropertySchemaChoiceRestrictionTest extends TestCase
 {
     use ProphecyTrait;
+    use ApiPropertyTypeLegacyTrait;
 
     private PropertySchemaChoiceRestriction $propertySchemaChoiceRestriction;
 
@@ -44,17 +47,28 @@ final class PropertySchemaChoiceRestrictionTest extends TestCase
 
     public static function supportsProvider(): \Generator
     {
-        yield 'supported string' => [new Choice(['choices' => ['a', 'b']]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), true];
-        yield 'supported int' => [new Choice(['choices' => [1, 2]]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)]), true];
-        yield 'supported float' => [new Choice(['choices' => [1.1, 2.2]]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_FLOAT)]), true];
-        yield 'supported string/int/float with union types' => [new Choice(['choices' => [1, 2, 1.1, 2.2, 'a', 'b']]), (new ApiProperty())->withBuiltinTypes([
-            new Type(Type::BUILTIN_TYPE_FLOAT),
-            new Type(Type::BUILTIN_TYPE_INT),
-            new Type(Type::BUILTIN_TYPE_STRING),
-        ]), true];
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $stringType = Type::string();
+            $intType = Type::int();
+            $floatType = Type::float();
+            $unionType = Type::union(Type::float(), Type::int(), Type::string());
+            $objectType = Type::object();
+        } else {
+            $stringType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+            $intType = [new LegacyType(LegacyType::BUILTIN_TYPE_INT)];
+            $floatType = [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)];
+            $unionType = [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT), new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+            $objectType = [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT)];
+        }
+
+        yield 'supported string' => [new Choice(['choices' => ['a', 'b']]), $this->apiPropertyWithPhpOrBuiltinType($stringType), true];
+        yield 'supported int' => [new Choice(['choices' => [1, 2]]), $this->apiPropertyWithPhpOrBuiltinType($intType), true];
+        yield 'supported float' => [new Choice(['choices' => [1.1, 2.2]]), $this->apiPropertyWithPhpOrBuiltinType($floatType), true];
+        yield 'supported string/int/float with union types' => [new Choice(['choices' => [1, 2, 1.1, 2.2, 'a', 'b']]), $this->apiPropertyWithPhpOrBuiltinType($unionType), true];
 
         yield 'not supported constraint' => [new Positive(), new ApiProperty(), false];
-        yield 'not supported type' => [new Choice(['choices' => [new \stdClass(), new \stdClass()]]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT)]), false];
+        yield 'not supported type' => [new Choice(['choices' => [new \stdClass(), new \stdClass()]]), $this->apiPropertyWithPhpOrBuiltinType($objectType), false];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('createProvider')]
@@ -65,6 +79,19 @@ final class PropertySchemaChoiceRestrictionTest extends TestCase
 
     public static function createProvider(): \Generator
     {
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists(ApiProperty::class, 'getPhpType')) {
+            $stringType = Type::string();
+            $intType = Type::int();
+            $floatType = [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)];
+            $unionType = Type::union(Type::string(), Type::int(), Type::float());
+        } else {
+            $stringType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
+            $intType = [new LegacyType(LegacyType::BUILTIN_TYPE_INT)];
+            $floatType = [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)];
+            $unionType = [new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)];
+        }
+
         yield 'single string choice' => [new Choice(['choices' => ['a', 'b']]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), ['enum' => ['a', 'b']]];
         yield 'multi string choice' => [new Choice(['choices' => ['a', 'b'], 'multiple' => true]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b']]]];
         yield 'multi string choice min' => [new Choice(['choices' => ['a', 'b'], 'multiple' => true, 'min' => 2]), (new ApiProperty())->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)]), ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['a', 'b']], 'minItems' => 2]];

@@ -14,7 +14,9 @@ declare(strict_types=1);
 namespace ApiPlatform\Symfony\Validator\Metadata\Property\Restriction;
 
 use ApiPlatform\Metadata\ApiProperty;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\TypeIdentifier;
+use Symfony\Component\TypeInfo\Type\CollectionType;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\Constraints\Choice;
 
@@ -78,9 +80,30 @@ final class PropertySchemaChoiceRestriction implements PropertySchemaRestriction
      */
     public function supports(Constraint $constraint, ApiProperty $propertyMetadata): bool
     {
-        $types = array_map(static fn (Type $type) => $type->getBuiltinType(), $propertyMetadata->getBuiltinTypes() ?? []);
+        // BC layer for api-platform/metadata < 4.1
+        if (method_exists($propertyMetadata, 'getPhpType')) {
+            if (!$constraint instanceof Choice) {
+                return false;
+            }
+
+            if ($propertyMetadata->getExtraProperties()['nested_schema'] ?? false) {
+                return true;
+            }
+
+            if (null === $type = $propertyMetadata->getPhpType()) {
+                return false;
+            }
+
+            if ($type instanceof CollectionType && $type->getCollectionValueType()->isIdentifiedBy(TypeIdentifier::STRING, TypeIdentifier::INT, TypeIdentifier::FLOAT)) {
+                return true;
+            }
+
+            return $type->isIdentifiedBy(TypeIdentifier::STRING, TypeIdentifier::INT, TypeIdentifier::FLOAT);
+        }
+
+        $types = array_map(static fn (LegacyType $type) => $type->getBuiltinType(), $propertyMetadata->getBuiltinTypes() ?? []);
         if ($propertyMetadata->getExtraProperties()['nested_schema'] ?? false) {
-            $types = [Type::BUILTIN_TYPE_STRING];
+            $types = [LegacyType::BUILTIN_TYPE_STRING];
         }
 
         if (
@@ -88,9 +111,9 @@ final class PropertySchemaChoiceRestriction implements PropertySchemaRestriction
             && $builtinType->isCollection()
             && \count($builtinType->getCollectionValueTypes())
         ) {
-            $types = array_unique(array_merge($types, array_map(static fn (Type $type) => $type->getBuiltinType(), $builtinType->getCollectionValueTypes())));
+            $types = array_unique(array_merge($types, array_map(static fn (LegacyType $type) => $type->getBuiltinType(), $builtinType->getCollectionValueTypes())));
         }
 
-        return $constraint instanceof Choice && \count($types) && array_intersect($types, [Type::BUILTIN_TYPE_STRING, Type::BUILTIN_TYPE_INT, Type::BUILTIN_TYPE_FLOAT]);
+        return $constraint instanceof Choice && \count($types) && array_intersect($types, [LegacyType::BUILTIN_TYPE_STRING, LegacyType::BUILTIN_TYPE_INT, LegacyType::BUILTIN_TYPE_FLOAT]);
     }
 }
