@@ -131,7 +131,7 @@ final class OrderFilter extends AbstractFilter implements SortFilterInterface
         $orders = [];
 
         foreach ($properties as $property => $direction) {
-            [$type] = $this->getMetadata($resourceClass, $property);
+            [$type] = $this->getFilterMetadata($resourceClass, $property);
 
             if (!$type) {
                 continue;
@@ -171,7 +171,7 @@ final class OrderFilter extends AbstractFilter implements SortFilterInterface
         $description = [];
 
         foreach ($this->getProperties($resourceClass) as $property) {
-            [$type] = $this->getMetadata($resourceClass, $property);
+            [$type] = $this->getFilterMetadata($resourceClass, $property);
 
             if (!$type) {
                 continue;

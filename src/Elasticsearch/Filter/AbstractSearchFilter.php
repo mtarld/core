@@ -21,8 +21,11 @@ use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use ApiPlatform\Metadata\Property\Factory\PropertyNameCollectionFactoryInterface;
 use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
+use Symfony\Component\TypeInfo\TypeIdentifier;
 
 /**
  * Abstract class with helpers for easing the implementation of a search filter like a term filter or a match filter.
@@ -45,7 +48,7 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
         $searches = [];
 
         foreach ($context['filters'] ?? [] as $property => $values) {
-            [$type, $hasAssociation, $nestedResourceClass, $nestedProperty] = $this->getMetadata($resourceClass, $property);
+            [$type, $hasAssociation, $nestedResourceClass, $nestedProperty] = $this->getFilterMetadata($resourceClass, $property);
 
             if (!$type || !$values = (array) $values) {
                 continue;
@@ -55,7 +58,7 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
                 $values = array_map($this->getIdentifierValue(...), $values, array_fill(0, \count($values), $nestedProperty));
             }
 
-            if (!$this->hasValidValues($values, $type)) {
+            if (!$this->hasValidValuesAgainstType($values, $type)) {
                 continue;
             }
 
@@ -85,7 +88,7 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
         $description = [];
 
         foreach ($this->getProperties($resourceClass) as $property) {
-            [$type, $hasAssociation] = $this->getMetadata($resourceClass, $property);
+            [$type, $hasAssociation] = $this->getFilterMetadata($resourceClass, $property);
 
             if (!$type) {
                 continue;
@@ -94,7 +97,7 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
             foreach ([$property, "{$property}[]"] as $filterParameterName) {
                 $description[$filterParameterName] = [
                     'property' => $property,
-                    'type' => $hasAssociation ? 'string' : $this->getPhpType($type),
+                    'type' => $hasAssociation ? 'string' : $this->getPhpTypeString($type),
                     'required' => false,
                     'is_collection' => str_ends_with((string) $filterParameterName, '[]'),
                 ];
@@ -110,18 +113,22 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
     abstract protected function getQuery(string $property, array $values, ?string $nestedPath): array;
 
     /**
-     * Converts the given {@see Type} in PHP type.
+     * Converts the given {@see LegacyType} in PHP type.
+     *
+     * @deprecated since 4.1, use "getPhpTypeString" instead.
      */
-    protected function getPhpType(Type $type): string
+    protected function getPhpType(LegacyType $type): string
     {
+        trigger_deprecation('api-platform/metadata', '4.1', 'The "%s()" method is deprecated, use "%s::getPhpTypeString()" instead.', __METHOD__, self::class);
+
         switch ($builtinType = $type->getBuiltinType()) {
-            case Type::BUILTIN_TYPE_ARRAY:
-            case Type::BUILTIN_TYPE_INT:
-            case Type::BUILTIN_TYPE_FLOAT:
-            case Type::BUILTIN_TYPE_BOOL:
-            case Type::BUILTIN_TYPE_STRING:
+            case LegacyType::BUILTIN_TYPE_ARRAY:
+            case LegacyType::BUILTIN_TYPE_INT:
+            case LegacyType::BUILTIN_TYPE_FLOAT:
+            case LegacyType::BUILTIN_TYPE_BOOL:
+            case LegacyType::BUILTIN_TYPE_STRING:
                 return $builtinType;
-            case Type::BUILTIN_TYPE_OBJECT:
+            case LegacyType::BUILTIN_TYPE_OBJECT:
                 if (null !== ($className = $type->getClassName()) && is_a($className, \DateTimeInterface::class, true)) {
                     return \DateTimeInterface::class;
                 }
@@ -130,6 +137,23 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
             default:
                 return 'string';
         }
+    }
+
+    protected function getPhpTypeString(Type $type): string
+    {
+        if ($type->isIdentifiedBy(TypeIdentifier::ARRAY, TypeIdentifier::INT, TypeIdentifier::FLOAT, TypeIdentifier::BOOL, TypeIdentifier::STRING)) {
+            while ($type instanceof WrappingTypeInterface) {
+                $type = $type->getWrappedType();
+            }
+
+            return (string) $type;
+        }
+
+        if ($type->isIdentifiedBy(\DateTimeInterface::class)) {
+            return \DateTimeInterface::class;
+        }
+
+        return 'string';
     }
 
     /**
@@ -164,15 +188,34 @@ abstract class AbstractSearchFilter extends AbstractFilter implements ConstantSc
         return $iri;
     }
 
-    /**
-     * Are the given values valid according to the given {@see Type}?
-     */
-    protected function hasValidValues(array $values, Type $type): bool
+    protected function hasValidValuesAgainstType(array $values, Type $type): bool
     {
         foreach ($values as $value) {
             if (
                 null !== $value
-                && Type::BUILTIN_TYPE_INT === $type->getBuiltinType()
+                && $type->isIdentifiedBy(TypeIdentifier::INT)
+                && false === filter_var($value, \FILTER_VALIDATE_INT)
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Are the given values valid according to the given {@see LegacyType}?
+     *
+     * @deprecated since 4.1, use "hasValidValuesAgainstType" instead.
+     */
+    protected function hasValidValues(array $values, LegacyType $type): bool
+    {
+        trigger_deprecation('api-platform/metadata', '4.1', 'The "%s()" method is deprecated, use "%s::hasValidValuesAgainstType()" instead.', __METHOD__, self::class);
+
+        foreach ($values as $value) {
+            if (
+                null !== $value
+                && LegacyType::BUILTIN_TYPE_INT === $type->getBuiltinType()
                 && false === filter_var($value, \FILTER_VALIDATE_INT)
             ) {
                 return false;
