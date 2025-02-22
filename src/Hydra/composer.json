@@ -31,6 +31,7 @@
         "api-platform/jsonld": "^3.4 || ^4.0",
         "api-platform/json-schema": "^3.4 || ^4.0",
         "api-platform/serializer": "^3.4 || ^4.0",
+        "symfony/type-info": "^7.2",
         "symfony/web-link": "^6.4 || ^7.0"
     },
     "require-dev": {
