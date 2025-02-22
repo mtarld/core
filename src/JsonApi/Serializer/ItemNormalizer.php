@@ -36,6 +36,11 @@ use Symfony\Component\Serializer\Exception\UnexpectedValueException;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactoryInterface;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 
 /**
  * Converts between objects and array.
@@ -319,50 +324,70 @@ final class ItemNormalizer extends AbstractItemNormalizer
                 ->propertyMetadataFactory
                 ->create($context['resource_class'], $attribute, $options);
 
-            $types = $propertyMetadata->getBuiltinTypes() ?? [];
-
             // prevent declaring $attribute as attribute if it's already declared as relationship
             $isRelationship = false;
 
-            foreach ($types as $type) {
-                $isOne = $isMany = false;
+            if ($type = $propertyMetadata->getPhpType()) {
+                /** @var class-string|null $className */
+                $className = null;
 
-                if ($type->isCollection()) {
-                    $collectionValueType = $type->getCollectionValueTypes()[0] ?? null;
-                    $isMany = $collectionValueType && ($className = $collectionValueType->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
-                } else {
-                    $isOne = ($className = $type->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
+                $typeIsResourceClass = function (Type $type) use (&$typeIsResourceClass, &$className): bool {
+                    return match (true) {
+                        $type instanceof ObjectType => $this->resourceClassResolver->isResourceClass($className = $type->getClassName()),
+                        $type instanceof WrappingTypeInterface => $type->wrappedTypeIsSatisfiedBy($typeIsResourceClass),
+                        $type instanceof CompositeTypeInterface => $type->composedTypesAreSatisfiedBy($typeIsResourceClass),
+                        default => false,
+                    };
+                };
+
+                $collectionValueIsResourceClass = function (Type $type) use ($typeIsResourceClass, &$collectionValueIsResourceClass): bool {
+                    return match (true) {
+                        $type instanceof CollectionType => $type->getCollectionValueType()->isSatisfiedBy($typeIsResourceClass),
+                        $type instanceof WrappingTypeInterface => $type->wrappedTypeIsSatisfiedBy($collectionValueIsResourceClass),
+                        $type instanceof CompositeTypeInterface => $type->composedTypesAreSatisfiedBy($collectionValueIsResourceClass),
+                        default => false,
+                    };
+                };
+
+                foreach ($type instanceof CompositeTypeInterface ? $type->getTypes() : [$type] as $t) {
+                    $isOne = $isMany = false;
+
+                    if ($t->isSatisfiedBy($collectionValueIsResourceClass)) {
+                        $isMany = true;
+                    } elseif ($t->isSatisfiedBy($typeIsResourceClass)) {
+                        $isOne = true;
+                    }
+
+                    if (!$className || (!$isOne && !$isMany)) {
+                        // don't declare it as an attribute too quick: maybe the next type is a valid resource
+                        continue;
+                    }
+
+                    $relation = [
+                        'name' => $attribute,
+                        'type' => $this->getResourceShortName($className),
+                        'cardinality' => $isOne ? 'one' : 'many',
+                    ];
+
+                    // if we specify the uriTemplate, generates its value for link definition
+                    // @see ApiPlatform\Serializer\AbstractItemNormalizer:getAttributeValue logic for intentional duplicate content
+                    if ($itemUriTemplate = $propertyMetadata->getUriTemplate()) {
+                        $attributeValue = $this->propertyAccessor->getValue($object, $attribute);
+                        $resourceClass = $this->resourceClassResolver->getResourceClass($attributeValue, $className);
+                        $childContext = $this->createChildContext($context, $attribute, $format);
+                        unset($childContext['iri'], $childContext['uri_variables'], $childContext['resource_class'], $childContext['operation']);
+
+                        $operation = $this->resourceMetadataCollectionFactory->create($resourceClass)->getOperation(
+                            operationName: $itemUriTemplate,
+                            httpOperation: true
+                        );
+
+                        $components['links'][$attribute] = $this->iriConverter->getIriFromResource($object, UrlGeneratorInterface::ABS_PATH, $operation, $childContext);
+                    }
+
+                    $components['relationships'][] = $relation;
+                    $isRelationship = true;
                 }
-
-                if (!isset($className) || !$isOne && !$isMany) {
-                    // don't declare it as an attribute too quick: maybe the next type is a valid resource
-                    continue;
-                }
-
-                $relation = [
-                    'name' => $attribute,
-                    'type' => $this->getResourceShortName($className),
-                    'cardinality' => $isOne ? 'one' : 'many',
-                ];
-
-                // if we specify the uriTemplate, generates its value for link definition
-                // @see ApiPlatform\Serializer\AbstractItemNormalizer:getAttributeValue logic for intentional duplicate content
-                if ($itemUriTemplate = $propertyMetadata->getUriTemplate()) {
-                    $attributeValue = $this->propertyAccessor->getValue($object, $attribute);
-                    $resourceClass = $this->resourceClassResolver->getResourceClass($attributeValue, $className);
-                    $childContext = $this->createChildContext($context, $attribute, $format);
-                    unset($childContext['iri'], $childContext['uri_variables'], $childContext['resource_class'], $childContext['operation']);
-
-                    $operation = $this->resourceMetadataCollectionFactory->create($resourceClass)->getOperation(
-                        operationName: $itemUriTemplate,
-                        httpOperation: true
-                    );
-
-                    $components['links'][$attribute] = $this->iriConverter->getIriFromResource($object, UrlGeneratorInterface::ABS_PATH, $operation, $childContext);
-                }
-
-                $components['relationships'][] = $relation;
-                $isRelationship = true;
             }
 
             // if all types are not relationships, declare it as an attribute

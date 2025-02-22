@@ -16,6 +16,10 @@ namespace ApiPlatform\JsonApi\Serializer;
 use ApiPlatform\Metadata\Property\Factory\PropertyMetadataFactoryInterface;
 use Symfony\Component\Serializer\NameConverter\NameConverterInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 use Symfony\Component\Validator\ConstraintViolationInterface;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
 
@@ -83,8 +87,15 @@ final class ConstraintViolationListNormalizer implements NormalizerInterface
             $fieldName = $this->nameConverter->normalize($fieldName, $class, self::FORMAT);
         }
 
-        $type = $propertyMetadata->getBuiltinTypes()[0] ?? null;
-        if ($type && null !== $type->getClassName()) {
+        $typeIsObject = static function (Type $type) use (&$typeIsObject): bool {
+            return match (true) {
+                $type instanceof WrappingTypeInterface => $type->wrappedTypeIsSatisfiedBy($typeIsObject),
+                $type instanceof CompositeTypeInterface => $type->composedTypesAreSatisfiedBy($typeIsObject),
+                default => $type instanceof ObjectType,
+            };
+        };
+
+        if ($propertyMetadata->getPhpType()?->isSatisfiedBy($typeIsObject)) {
             return "data/relationships/$fieldName";
         }
 
