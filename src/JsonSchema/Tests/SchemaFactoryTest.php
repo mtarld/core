@@ -35,8 +35,8 @@ use ApiPlatform\Metadata\ResourceClassResolverInterface;
 use PHPUnit\Framework\TestCase;
 use Prophecy\Argument;
 use Prophecy\PhpUnit\ProphecyTrait;
-use Symfony\Component\PropertyInfo\Type;
 use Symfony\Component\Serializer\Normalizer\AbstractNormalizer;
+use Symfony\Component\TypeInfo\Type;
 
 class SchemaFactoryTest extends TestCase
 {
@@ -52,13 +52,13 @@ class SchemaFactoryTest extends TestCase
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $propertyMetadataFactoryProphecy->create(NotAResource::class, 'foo', Argument::cetera())->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
+                ->withPhpType(Type::string())
                 ->withReadable(true)
                 ->withSchema(['type' => 'string'])
         );
         $propertyMetadataFactoryProphecy->create(NotAResource::class, 'bar', Argument::cetera())->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_INT)])
+                ->withPhpType(Type::int())
                 ->withReadable(true)
                 ->withDefault('default_bar')
                 ->withExample('example_bar')
@@ -66,7 +66,7 @@ class SchemaFactoryTest extends TestCase
         );
         $propertyMetadataFactoryProphecy->create(NotAResource::class, 'genderType', Argument::cetera())->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT)])
+                ->withPhpType(Type::object())
                 ->withReadable(true)
                 ->withDefault('male')
                 ->withSchema(['type' => 'object', 'default' => 'male', 'example' => 'male'])
@@ -127,13 +127,13 @@ class SchemaFactoryTest extends TestCase
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $propertyMetadataFactoryProphecy->create(NotAResourceWithUnionIntersectTypes::class, 'ignoredProperty', Argument::cetera())->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING, nullable: true)])
+                ->withPhpType(Type::nullable(Type::string())) // @phpstan-ignore-line
                 ->withReadable(true)
                 ->withSchema(['type' => ['string', 'null']])
         );
         $propertyMetadataFactoryProphecy->create(NotAResourceWithUnionIntersectTypes::class, 'unionType', Argument::cetera())->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING, nullable: true), new Type(Type::BUILTIN_TYPE_INT, nullable: true), new Type(Type::BUILTIN_TYPE_FLOAT, nullable: true)])
+                ->withPhpType(Type::union(Type::string(), Type::int(), Type::float(), Type::null()))
                 ->withReadable(true)
                 ->withSchema(['oneOf' => [
                     ['type' => ['string', 'null']],
@@ -142,7 +142,7 @@ class SchemaFactoryTest extends TestCase
         );
         $propertyMetadataFactoryProphecy->create(NotAResourceWithUnionIntersectTypes::class, 'intersectType', Argument::cetera())->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, class: Serializable::class), new Type(Type::BUILTIN_TYPE_OBJECT, class: DummyResourceInterface::class)])
+                ->withPhpType(Type::intersection(Type::object(Serializable::class), Type::object(DummyResourceInterface::class)))
                 ->withReadable(true)
                 ->withSchema(['type' => 'object'])
         );
@@ -210,19 +210,19 @@ class SchemaFactoryTest extends TestCase
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $propertyMetadataFactoryProphecy->create(OverriddenOperationDummy::class, 'alias', Argument::type('array'))->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
+                ->withPhpType(Type::string())
                 ->withReadable(true)
                 ->withSchema(['type' => 'string'])
         );
         $propertyMetadataFactoryProphecy->create(OverriddenOperationDummy::class, 'description', Argument::type('array'))->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_STRING)])
+                ->withPhpType(Type::string())
                 ->withReadable(true)
                 ->withSchema(['type' => 'string'])
         );
         $propertyMetadataFactoryProphecy->create(OverriddenOperationDummy::class, 'genderType', Argument::type('array'))->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_OBJECT, false, GenderTypeEnum::class)])
+                ->withPhpType(Type::enum(GenderTypeEnum::class))
                 ->withReadable(true)
                 ->withDefault(GenderTypeEnum::MALE)
                 ->withSchema(['type' => 'object'])
@@ -275,13 +275,13 @@ class SchemaFactoryTest extends TestCase
         $propertyMetadataFactoryProphecy = $this->prophesize(PropertyMetadataFactoryInterface::class);
         $propertyMetadataFactoryProphecy->create(NotAResource::class, 'foo', Argument::cetera())->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING))])
+                ->withPhpType(Type::list(Type::string()))
                 ->withReadable(true)
                 ->withSchema(['type' => 'array', 'items' => ['string', 'int']])
         );
         $propertyMetadataFactoryProphecy->create(NotAResource::class, 'bar', Argument::cetera())->willReturn(
             (new ApiProperty())
-                ->withBuiltinTypes([new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_STRING))])
+                ->withPhpType(Type::dict(Type::string()))
                 ->withReadable(true)
                 ->withSchema(['type' => 'object', 'additionalProperties' => 'string'])
         );
